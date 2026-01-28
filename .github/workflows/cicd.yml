@@ -62,10 +62,18 @@ jobs:
     - name: Snyk Security Scan
       run: |
         chmod +x mvnw
-        snyk test --all-projects --json-file_output=snyk-report.json
+        snyk test --all-projects --json-file_output=snyk-report.json || true
       env:
         SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-      continue-on-error: true # Keep the pipeline running even if vulnerabilities are found for the demo
+
+    - name: Upload Scan Reports
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: scan-reports
+        path: |
+          fs-report.json
+          snyk-report.json
 
   test:
     runs-on: ubuntu-latest
@@ -181,3 +189,32 @@ jobs:
 #         git add ds.yml
 #         git commit -m "Update bankapp image tag to ${{ github.run_number }} in ds.yml"
 #         git push
+
+  AI-Security-Intelligence:
+    name: AI Intelligence Layer
+    runs-on: ubuntu-latest
+    needs: [security-check, build_project_and_sonar_scan]
+    if: always()
+    steps:
+    - uses: actions/checkout@v4
+    - name: Download Scan Reports
+      uses: actions/download-artifact@v4
+      with:
+        name: scan-reports
+        path: .
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.x'
+
+    - name: Install dependencies
+      run: pip install requests
+
+    - name: AI Security Analysis
+      run: python scripts/ai_security_agent.py
+      env:
+        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        GITHUB_STEP_SUMMARY: ${{ github.step_summary }}
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
