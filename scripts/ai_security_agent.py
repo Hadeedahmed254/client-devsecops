@@ -4,32 +4,32 @@ import requests
 import sys
 
 def get_gemini_response(prompt, api_key):
-    # ✅ FIXED: Correct API version + supported model
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key={api_key}"
-    
+    url = (
+        "https://generativelanguage.googleapis.com/"
+        "v1/models/gemini-1.5-flash-latest:generateContent"
+        f"?key={api_key}"
+    )
+
     headers = {
-        'Content-Type': 'application/json'
+        "Content-Type": "application/json"
     }
-    
+
     payload = {
         "contents": [
             {
-                "parts": [
-                    {"text": prompt}
-                ]
+                "role": "user",
+                "parts": [{"text": prompt}]
             }
         ]
     }
 
-    response = requests.post(url, json=payload, headers=headers)
+    response = requests.post(url, headers=headers, json=payload)
 
     if response.status_code == 200:
-        try:
-            return response.json()['candidates'][0]['content']['parts'][0]['text']
-        except Exception as e:
-            return f"AI response parsing failed: {e}"
+        return response.json()["candidates"][0]["content"]["parts"][0]["text"]
     else:
         return f"Error from AI API: {response.text}"
+
 
 
 def get_sonar_data(host_url, token, project_key):
