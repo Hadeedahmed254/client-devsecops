@@ -74,6 +74,11 @@ resource "aws_instance" "sonar_server" {
               sudo systemctl start docker
               sudo systemctl enable docker
               sudo chmod 666 /var/run/docker.sock
+              
+              # SonarQube requirement for ElasticSearch
+              sudo sysctl -w vm.max_map_count=262144
+              echo "vm.max_map_count=262144" | sudo tee -a /etc/sysctl.conf
+              
               docker run -d --name sonarqube -p 9000:9000 sonarqube:lts-community
               EOF
 
