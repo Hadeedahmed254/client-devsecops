@@ -1,16 +1,16 @@
 name: EKS Provisioning
 
-# on:
-#   workflow_dispatch:
-#     inputs:
-#       action:
-#         description: 'Terraform action to perform'
-#         required: true
-#         default: 'apply'
-#         type: choice
-#         options:
-#         - apply
-#         - destroy
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Terraform action to perform'
+        required: true
+        default: 'apply'
+        type: choice
+        options:
+        - apply
+        - destroy
 
 jobs:
   terraform:
