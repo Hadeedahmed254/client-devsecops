@@ -37,10 +37,20 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: us-east-1
 
+    - name: Create S3 Bucket if missing
+      run: |
+        if ! aws s3api head-bucket --bucket "sonar-bucket-yas-unique" 2>/dev/null; then
+          echo "Bucket missing. Creating..."
+          aws s3api create-bucket --bucket "sonar-bucket-yas-unique" --region us-east-1
+          aws s3api put-bucket-versioning --bucket "sonar-bucket-yas-unique" --versioning-configuration Status=Enabled
+        else
+          echo "Bucket already exists."
+        fi
+
     - name: Terraform Init
       run: |
-        # Using a separate key for Sonar state file
-        terraform init -backend-config="bucket=misc-bucket" -backend-config="key=sonar/terraform.tfstate" -backend-config="region=us-east-1"
+        # Using the new independent sonar-bucket
+        terraform init -backend-config="bucket=sonar-bucket-yas-unique" -backend-config="key=sonar/terraform.tfstate" -backend-config="region=us-east-1"
 
     - name: Terraform Action
       run: terraform ${{ github.event.inputs.action }} -auto-approve

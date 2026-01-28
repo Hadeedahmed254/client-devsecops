@@ -1,3 +1,19 @@
+terraform {
+  backend "s3" {}
+}
+
+resource "aws_s3_bucket" "sonar_bucket" {
+  bucket = "sonar-bucket-yas-unique" # Added a suffix for uniqueness. Change if needed.
+  tags = { Name = "sonar-state-bucket" }
+}
+
+resource "aws_s3_bucket_versioning" "sonar_versioning" {
+  bucket = aws_s3_bucket.sonar_bucket.id
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
 provider "aws" {
   region = "us-east-1"
 }
@@ -69,17 +85,18 @@ resource "aws_instance" "sonar_server" {
 
   user_data = <<-EOF
               #!/bin/bash
-              sudo yum update -y
-              sudo yum install -y docker
+              sudo apt-get update -y
+              sudo apt-get install -y docker.io
               sudo systemctl start docker
               sudo systemctl enable docker
+              sudo usermod -aG docker ubuntu
               sudo chmod 666 /var/run/docker.sock
               
               # SonarQube requirement for ElasticSearch
               sudo sysctl -w vm.max_map_count=262144
               echo "vm.max_map_count=262144" | sudo tee -a /etc/sysctl.conf
               
-              docker run -d --name sonarqube -p 9000:9000 sonarqube:lts-community
+              sudo docker run -d --name sonarqube -p 9000:9000 sonarqube:lts-community
               EOF
 
   tags = {
