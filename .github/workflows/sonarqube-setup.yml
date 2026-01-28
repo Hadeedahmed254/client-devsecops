@@ -1,0 +1,50 @@
+name: SonarQube Setup
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Terraform action to perform'
+        required: true
+        default: 'apply'
+        type: choice
+        options:
+        - apply
+        - destroy
+
+jobs:
+  terraform:
+    name: Provision SonarQube
+    runs-on: ubuntu-latest
+    
+    defaults:
+      run:
+        working-directory: ./sonarqube-terraform
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: 1.6.3
+
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-east-1
+
+    - name: Terraform Init
+      run: |
+        # Using a separate key for Sonar state file
+        terraform init -backend-config="bucket=misc-bucket" -backend-config="key=sonar/terraform.tfstate" -backend-config="region=us-east-1"
+
+    - name: Terraform Action
+      run: terraform ${{ github.event.inputs.action }} -auto-approve
+
+    - name: Show Sonar URL
+      if: github.event.inputs.action == 'apply'
+      run: terraform output sonarqube_url

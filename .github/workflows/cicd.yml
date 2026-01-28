@@ -1,8 +1,7 @@
 name: CICD Pipeline 
 
 on:
-  push:
-    branches: [ "main" ]
+  workflow_dispatch:
 
 jobs:
   compile:
@@ -46,6 +45,18 @@ jobs:
         sudo mv gitleaks /usr/local/bin/
     - name: Gitleaks Code Scan
       run: gitleaks detect source . -r gitleaks-report.json -f json
+
+    - name: Install Snyk CLI
+      run: |
+        curl https://static.snyk.io/cli/latest/snyk-linux -o snyk
+        chmod +x snyk
+        sudo mv snyk /usr/local/bin/
+
+    - name: Snyk Security Scan
+      run: snyk test --all-projects --json-file_output=snyk-report.json
+      env:
+        SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+      continue-on-error: true # Keep the pipeline running even if vulnerabilities are found for the demo
 
   test:
     runs-on: ubuntu-latest
@@ -95,69 +106,69 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
 
-  buils_docker_image_and_push:
-    runs-on: ubuntu-latest
-    needs: build_project_and_sonar_scan
-    outputs:
-      image_tag: ${{ steps.set_tag.outputs.tag }}
-    steps:
-    - uses: actions/checkout@v4
-    - name: Download JAR artifact
-      uses: actions/download-artifact@v4
-      with:
-        name: app-jar
-        path: app 
+#   buils_docker_image_and_push:
+#     runs-on: ubuntu-latest
+#     needs: build_project_and_sonar_scan
+#     outputs:
+#       image_tag: ${{ steps.set_tag.outputs.tag }}
+#     steps:
+#     - uses: actions/checkout@v4
+#     - name: Download JAR artifact
+#       uses: actions/download-artifact@v4
+#       with:
+#         name: app-jar
+#         path: app 
 
-    - name: Set Image Tag
-      id: set_tag
-      run: echo "tag=${{ github.run_number }}" >> $GITHUB_OUTPUT
+#     - name: Set Image Tag
+#       id: set_tag
+#       run: echo "tag=${{ github.run_number }}" >> $GITHUB_OUTPUT
         
-    - name: Configure AWS Credentials
-      uses: aws-actions/configure-aws-credentials@v4
-      with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: us-east-1
+#     - name: Configure AWS Credentials
+#       uses: aws-actions/configure-aws-credentials@v4
+#       with:
+#         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+#         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+#         aws-region: us-east-1
 
-    - name: Login to Amazon ECR
-      id: login-ecr
-      uses: aws-actions/amazon-ecr-login@v2
+#     - name: Login to Amazon ECR
+#       id: login-ecr
+#       uses: aws-actions/amazon-ecr-login@v2
 
-    - name: Build, tag, and push image to Amazon ECR
-      env:
-        ECR_REGISTRY: ${{ steps.login-ecr.registry }}
-        ECR_REPOSITORY: bankapp
-        IMAGE_TAG: ${{ github.run_number }}
-      run: |
-        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-        # Also tag as latest
-        docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
-        docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+#     - name: Build, tag, and push image to Amazon ECR
+#       env:
+#         ECR_REGISTRY: ${{ steps.login-ecr.registry }}
+#         ECR_REPOSITORY: bankapp
+#         IMAGE_TAG: ${{ github.run_number }}
+#       run: |
+#         docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+#         docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+#         # Also tag as latest
+#         docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+#         docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
 
-  update-deployment:
-    runs-on: ubuntu-latest
-    needs: buils_docker_image_and_push
-    steps:
-    - uses: actions/checkout@v4
-      with:
-        token: ${{ secrets.GITHUB_TOKEN }}
+#   update-deployment:
+#     runs-on: ubuntu-latest
+#     needs: buils_docker_image_and_push
+#     steps:
+#     - uses: actions/checkout@v4
+#       with:
+#         token: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Update ds.yml with ECR Image
-      run: |
-        # Get the ECR registry from AWS CLI
-        ECR_REGISTRY=$(aws ecr describe-registry --query 'registryId' --output text).dkr.ecr.us-east-1.amazonaws.com
-        IMAGE_TAG=${{ github.run_number }}
-        sed -i "s#image: .*bankapp:.*#image: $ECR_REGISTRY/bankapp:$IMAGE_TAG#g" ds.yml
-      env:
-        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        AWS_DEFAULT_REGION: us-east-1
+#     - name: Update ds.yml with ECR Image
+#       run: |
+#         # Get the ECR registry from AWS CLI
+#         ECR_REGISTRY=$(aws ecr describe-registry --query 'registryId' --output text).dkr.ecr.us-east-1.amazonaws.com
+#         IMAGE_TAG=${{ github.run_number }}
+#         sed -i "s#image: .*bankapp:.*#image: $ECR_REGISTRY/bankapp:$IMAGE_TAG#g" ds.yml
+#       env:
+#         AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+#         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+#         AWS_DEFAULT_REGION: us-east-1
 
-    - name: Commit and Push changes
-      run: |
-        git config --global user.name "github-actions[bot]"
-        git config --global user.email "github-actions[bot]@users.noreply.github.com"
-        git add ds.yml
-        git commit -m "Update bankapp image tag to ${{ github.run_number }} in ds.yml"
-        git push
+#     - name: Commit and Push changes
+#       run: |
+#         git config --global user.name "github-actions[bot]"
+#         git config --global user.email "github-actions[bot]@users.noreply.github.com"
+#         git add ds.yml
+#         git commit -m "Update bankapp image tag to ${{ github.run_number }} in ds.yml"
+#         git push
