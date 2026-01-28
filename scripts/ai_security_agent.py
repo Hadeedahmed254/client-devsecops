@@ -133,24 +133,23 @@ def main():
         vulnerabilities_summary += "No Snyk vulnerabilities found.\n"
 
     prompt = f"""
-You are a DevSecOps AI Assistant acting as a post-scan intelligence layer in a CI/CD pipeline.
-
-Analyze the following combined results from TRIVY, SNYK, and SONARQUBE for a Java application.
-
-{vulnerabilities_summary}
-
-{sonar_summary}
-
-Your task:
-1. EXPLAIN the most critical risks in simple business-friendly language
-2. ANALYZE how dependency vulnerabilities and code quality issues interact
-3. SUGGEST FIXES:
-   - pom.xml dependency updates
-   - SonarQube refactoring guidance
-   - Dockerfile security improvements if applicable
-
-Format the response as a professional Markdown security report with emojis and headings.
-"""
+    You are a DevSecOps AI Assistant. Your task is to act as a post-scan intelligence layer.
+    Analyze these results from TRIVY, SNYK, and SONARQUBE for 'BankApp'.
+    
+    {vulnerabilities_summary}
+    
+    {sonar_summary}
+    
+    Generate a CONCISE 'Executive Security Dashboard' (Max 250 words):
+    1. 🛡️ OVERALL STATUS: One sentence on the security posture.
+    2. 🚨 TOP 3 RISKS: Very brief, human-readable explanations of the 3 most dangerous issues.
+    3. 💡 ACTIONABLE FIXES:
+       - Update [Library] to [Version] (pom.xml)
+       - Refactor [File] to fix [Sonar Issue]
+       - Quick Dockerfile security tip.
+    
+    Use a clean Markdown Table or List format. Keep it punchy and professional for a high-level client demo.
+    """
 
     api_key = os.getenv('GEMINI_API_KEY')
     if not api_key:
