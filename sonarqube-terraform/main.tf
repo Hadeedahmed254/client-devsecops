@@ -2,18 +2,6 @@ terraform {
   backend "s3" {}
 }
 
-resource "aws_s3_bucket" "sonar_bucket" {
-  bucket = "sonar-bucket-yas-unique" # Added a suffix for uniqueness. Change if needed.
-  tags = { Name = "sonar-state-bucket" }
-}
-
-resource "aws_s3_bucket_versioning" "sonar_versioning" {
-  bucket = aws_s3_bucket.sonar_bucket.id
-  versioning_configuration {
-    status = "Enabled"
-  }
-}
-
 provider "aws" {
   region = "us-east-1"
 }
