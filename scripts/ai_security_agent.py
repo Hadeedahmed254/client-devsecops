@@ -6,7 +6,7 @@ import sys
 def get_gemini_response(prompt, api_key):
     url = (
         "https://generativelanguage.googleapis.com/"
-        "v1/models/gemini-1.5-flash:generateContent"
+        "v1/models/gemini-2.5-flash:generateContent"
         f"?key={api_key}"
     )
 
@@ -23,12 +23,13 @@ def get_gemini_response(prompt, api_key):
         ]
     }
 
-    response = requests.post(url, headers=headers, json=payload)
+    response = requests.post(url, headers=headers, json=payload, timeout=60)
 
     if response.status_code == 200:
         return response.json()["candidates"][0]["content"]["parts"][0]["text"]
     else:
         return f"Error from AI API: {response.text}"
+
 
 
 
