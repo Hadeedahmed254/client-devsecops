@@ -60,7 +60,9 @@ jobs:
         sudo mv snyk /usr/local/bin/
 
     - name: Snyk Security Scan
-      run: snyk test --all-projects --json-file_output=snyk-report.json
+      run: |
+        chmod +x mvnw
+        snyk test --all-projects --json-file_output=snyk-report.json
       env:
         SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
       continue-on-error: true # Keep the pipeline running even if vulnerabilities are found for the demo
