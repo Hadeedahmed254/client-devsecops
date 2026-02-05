@@ -186,6 +186,7 @@ def generate_snyk_report(day_number):
 
 def generate_metadata(day_number, date):
     """Generate metadata file"""
+    date_path = date.strftime('%Y/%m/%d')
     return {
         "run_id": f"{day_number:03d}",
         "commit_sha": f"abc{random.randint(100000, 999999)}def",
@@ -194,33 +195,37 @@ def generate_metadata(day_number, date):
         "workflow": "CICD Pipeline",
         "actor": "github-actions",
         "event": "workflow_dispatch",
-        "generated": True,  # Mark as test data
+        "generated": True,
         "reports": {
-            "trivy": f"{date.strftime('%Y/%m/%d')}/run-{day_number:03d}/trivy-report.json",
-            "snyk": f"{date.strftime('%Y/%m/%d')}/run-{day_number:03d}/snyk-report.json",
-            "gitleaks": f"{date.strftime('%Y/%m/%d')}/run-{day_number:03d}/gitleaks-report.json"
+            "trivy": f"trivy/{date_path}/run-{day_number:03d}/trivy-report.json",
+            "snyk": f"snyk/{date_path}/run-{day_number:03d}/snyk-report.json",
+            "gitleaks": f"gitleaks/{date_path}/run-{day_number:03d}/gitleaks-report.json"
         }
     }
 
 def upload_to_s3(bucket_name, date, run_number, reports):
-    """Upload generated reports to S3"""
+    """Upload generated reports to S3 in structured folders"""
     s3 = boto3.client('s3')
-    
     date_path = date.strftime('%Y/%m/%d')
-    s3_prefix = f"{date_path}/run-{run_number:03d}/"
+    
+    # Map report types to their dedicated subfolders
+    type_map = {
+        "trivy-report.json": "trivy",
+        "gitleaks-report.json": "gitleaks",
+        "snyk-report.json": "snyk",
+        "metadata.json": "metadata"
+    }
     
     for filename, content in reports.items():
+        type_folder = type_map.get(filename, "other")
+        s3_key = f"{type_folder}/{date_path}/run-{run_number:03d}/{filename}"
+        
         try:
             s3.put_object(
                 Bucket=bucket_name,
-                Key=f"{s3_prefix}{filename}",
+                Key=s3_key,
                 Body=json.dumps(content, indent=2),
-                ContentType='application/json',
-                Metadata={
-                    'generated': 'true',
-                    'run': str(run_number),
-                    'date': date.isoformat()
-                }
+                ContentType='application/json'
             )
         except Exception as e:
             print(f"⚠️ Failed to upload {filename}: {e}")

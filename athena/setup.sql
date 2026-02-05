@@ -53,7 +53,7 @@ ROW FORMAT SERDE 'org.openx.data.jsonserde.JsonSerDe'
 WITH SERDEPROPERTIES (
   'ignore.malformed.json' = 'true'
 )
-LOCATION 's3://bankapp-security-reports-211125523455/'
+LOCATION 's3://bankapp-security-reports-211125523455/trivy/'
 TBLPROPERTIES (
   'projection.enabled' = 'true',
   'projection.year.type' = 'integer',
@@ -64,7 +64,7 @@ TBLPROPERTIES (
   'projection.day.type' = 'integer',
   'projection.day.range' = '01,31',
   'projection.day.digits' = '2',
-  'storage.location.template' = 's3://bankapp-security-reports-211125523455/${year}/${month}/${day}',
+  'storage.location.template' = 's3://bankapp-security-reports-211125523455/trivy/${year}/${month}/${day}',
   'recursive.directories' = 'true'
 );
 
@@ -99,7 +99,7 @@ ROW FORMAT SERDE 'org.openx.data.jsonserde.JsonSerDe'
 WITH SERDEPROPERTIES (
   'ignore.malformed.json' = 'true'
 )
-LOCATION 's3://bankapp-security-reports-211125523455/'
+LOCATION 's3://bankapp-security-reports-211125523455/gitleaks/'
 TBLPROPERTIES (
   'projection.enabled' = 'true',
   'projection.year.type' = 'integer',
@@ -110,7 +110,7 @@ TBLPROPERTIES (
   'projection.day.type' = 'integer',
   'projection.day.range' = '01,31',
   'projection.day.digits' = '2',
-  'storage.location.template' = 's3://bankapp-security-reports-211125523455/${year}/${month}/${day}',
+  'storage.location.template' = 's3://bankapp-security-reports-211125523455/gitleaks/${year}/${month}/${day}',
   'recursive.directories' = 'true'
 );
 
@@ -138,7 +138,7 @@ PARTITIONED BY (
   day STRING
 )
 ROW FORMAT SERDE 'org.openx.data.jsonserde.JsonSerDe'
-LOCATION 's3://bankapp-security-reports-211125523455/'
+LOCATION 's3://bankapp-security-reports-211125523455/metadata/'
 TBLPROPERTIES (
   'projection.enabled' = 'true',
   'projection.year.type' = 'integer',
@@ -149,7 +149,7 @@ TBLPROPERTIES (
   'projection.day.type' = 'integer',
   'projection.day.range' = '01,31',
   'projection.day.digits' = '2',
-  'storage.location.template' = 's3://bankapp-security-reports-211125523455/${year}/${month}/${day}',
+  'storage.location.template' = 's3://bankapp-security-reports-211125523455/metadata/${year}/${month}/${day}',
   'recursive.directories' = 'true'
 );
 

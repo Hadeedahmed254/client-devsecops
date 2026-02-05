@@ -139,13 +139,10 @@ jobs:
         BRANCH="${{ github.ref_name }}"
         TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
         
-        # S3 path with date organization
+        # S3 folder organization by type (required for Athena schema separation)
         S3_BUCKET="${{ vars.S3_SECURITY_REPORTS_BUCKET }}"
-        S3_PATH="s3://${S3_BUCKET}/${DATE}/run-${RUN_ID}/"
         
-        echo "📦 Preparing security reports for upload..."
-        
-        # Create metadata file
+        # Create metadata file with updated paths
         cat > metadata.json <<EOF
         {
           "run_id": "${RUN_ID}",
@@ -156,34 +153,34 @@ jobs:
           "actor": "${{ github.actor }}",
           "event": "${{ github.event_name }}",
           "reports": {
-            "trivy": "${DATE}/run-${RUN_ID}/trivy-report.json",
-            "snyk": "${DATE}/run-${RUN_ID}/snyk-report.json",
-            "gitleaks": "${DATE}/run-${RUN_ID}/gitleaks-report.json",
-            "sonarqube": "${DATE}/run-${RUN_ID}/sonarqube-export.json"
+            "trivy": "trivy/${DATE}/run-${RUN_ID}/trivy-report.json",
+            "snyk": "snyk/${DATE}/run-${RUN_ID}/snyk-report.json",
+            "gitleaks": "gitleaks/${DATE}/run-${RUN_ID}/gitleaks-report.json",
+            "sonarqube": "sonarqube/${DATE}/run-${RUN_ID}/sonarqube-export.json"
           }
         }
         EOF
         
-        # Upload all reports with metadata tags
+        # Upload individual reports to their dedicated type subfolders
         echo "📤 Uploading security reports to S3..."
         
-        aws s3 cp fs-report.json ${S3_PATH}trivy-report.json \
+        aws s3 cp fs-report.json s3://${S3_BUCKET}/trivy/${DATE}/run-${RUN_ID}/trivy-report.json \
           --metadata "commit=${COMMIT_SHA},branch=${BRANCH},run=${RUN_ID},date=${TIMESTAMP}" || echo "⚠️ Trivy upload failed"
         
-        aws s3 cp snyk-report.json ${S3_PATH}snyk-report.json \
+        aws s3 cp snyk-report.json s3://${S3_BUCKET}/snyk/${DATE}/run-${RUN_ID}/snyk-report.json \
           --metadata "commit=${COMMIT_SHA},branch=${BRANCH},run=${RUN_ID},date=${TIMESTAMP}" || echo "⚠️ Snyk upload failed"
         
-        aws s3 cp gitleaks-report.json ${S3_PATH}gitleaks-report.json \
+        aws s3 cp gitleaks-report.json s3://${S3_BUCKET}/gitleaks/${DATE}/run-${RUN_ID}/gitleaks-report.json \
           --metadata "commit=${COMMIT_SHA},branch=${BRANCH},run=${RUN_ID},date=${TIMESTAMP}" || echo "⚠️ Gitleaks upload failed"
         
-        aws s3 cp sonarqube-export.json ${S3_PATH}sonarqube-export.json \
+        aws s3 cp sonarqube-export.json s3://${S3_BUCKET}/sonarqube/${DATE}/run-${RUN_ID}/sonarqube-export.json \
           --metadata "commit=${COMMIT_SHA},branch=${BRANCH},run=${RUN_ID},date=${TIMESTAMP}" || echo "⚠️ SonarQube upload failed"
         
-        aws s3 cp metadata.json ${S3_PATH}metadata.json \
+        aws s3 cp metadata.json s3://${S3_BUCKET}/metadata/${DATE}/run-${RUN_ID}/metadata.json \
           --metadata "commit=${COMMIT_SHA},branch=${BRANCH},run=${RUN_ID},date=${TIMESTAMP}" || echo "⚠️ Metadata upload failed"
         
-        echo "✅ Security reports uploaded to: ${S3_PATH}"
-        echo "S3_REPORT_PATH=${S3_PATH}" >> $GITHUB_OUTPUT
+        echo "✅ Security reports uploaded to structured folders in: s3://${S3_BUCKET}/"
+        echo "S3_REPORT_PATH=s3://${S3_BUCKET}/" >> $GITHUB_OUTPUT
       continue-on-error: true
 
     # Upload all security reports to GitHub Artifacts (backup)
