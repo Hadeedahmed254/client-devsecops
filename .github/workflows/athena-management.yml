@@ -1,0 +1,196 @@
+name: Athena Database Management
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action to perform'
+        required: true
+        type: choice
+        options:
+          - setup
+          - destroy
+
+jobs:
+  manage-athena:
+    name: ${{ github.event.inputs.action == 'setup' && 'Setup' || 'Destroy' }} Athena Database
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: read
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+    
+    # ========================================
+    # SETUP ACTION
+    # ========================================
+    
+    - name: Create Athena Database and Tables
+      if: github.event.inputs.action == 'setup'
+      run: |
+        echo "🔧 Setting up Athena database..."
+        
+        # Read the setup SQL file
+        SQL_CONTENT=$(cat athena/setup.sql)
+        
+        # Split into individual statements and execute
+        # Create database
+        aws athena start-query-execution \
+          --query-string "CREATE DATABASE IF NOT EXISTS security_analytics COMMENT 'Security scan reports from CI/CD pipeline' LOCATION 's3://${{ vars.S3_SECURITY_REPORTS_BUCKET }}/';" \
+          --result-configuration "OutputLocation=s3://${{ vars.S3_SECURITY_REPORTS_BUCKET }}/athena-results/" \
+          --query-execution-context "Database=default" \
+          --region ${{ vars.AWS_REGION || 'us-east-1' }}
+        
+        echo "✅ Database created"
+        sleep 5
+        
+        # Create trivy_scans table
+        echo "Creating trivy_scans table..."
+        aws athena start-query-execution \
+          --query-string "$(sed -n '/CREATE EXTERNAL TABLE.*trivy_scans/,/^);$/p' athena/setup.sql | tr '\n' ' ')" \
+          --result-configuration "OutputLocation=s3://${{ vars.S3_SECURITY_REPORTS_BUCKET }}/athena-results/" \
+          --query-execution-context "Database=security_analytics" \
+          --region ${{ vars.AWS_REGION || 'us-east-1' }} || echo "Table may already exist"
+        
+        sleep 5
+        
+        # Create gitleaks_scans table  
+        echo "Creating gitleaks_scans table..."
+        aws athena start-query-execution \
+          --query-string "$(sed -n '/CREATE EXTERNAL TABLE.*gitleaks_scans/,/^);$/p' athena/setup.sql | tr '\n' ' ')" \
+          --result-configuration "OutputLocation=s3://${{ vars.S3_SECURITY_REPORTS_BUCKET }}/athena-results/" \
+          --query-execution-context "Database=security_analytics" \
+          --region ${{ vars.AWS_REGION || 'us-east-1' }} || echo "Table may already exist"
+        
+        sleep 5
+        
+        # Create scan_metadata table
+        echo "Creating scan_metadata table..."
+        aws athena start-query-execution \
+          --query-string "$(sed -n '/CREATE EXTERNAL TABLE.*scan_metadata/,/^);$/p' athena/setup.sql | tr '\n' ' ')" \
+          --result-configuration "OutputLocation=s3://${{ vars.S3_SECURITY_REPORTS_BUCKET }}/athena-results/" \
+          --query-execution-context "Database=security_analytics" \
+          --region ${{ vars.AWS_REGION || 'us-east-1' }} || echo "Table may already exist"
+        
+        echo "✅ All tables created"
+    
+    - name: Verify Tables Created
+      if: github.event.inputs.action == 'setup'
+      run: |
+        echo "🔍 Verifying tables..."
+        
+        QUERY_ID=$(aws athena start-query-execution \
+          --query-string "SHOW TABLES IN security_analytics;" \
+          --result-configuration "OutputLocation=s3://${{ vars.S3_SECURITY_REPORTS_BUCKET }}/athena-results/" \
+          --query-execution-context "Database=security_analytics" \
+          --region ${{ vars.AWS_REGION || 'us-east-1' }} \
+          --query 'QueryExecutionId' \
+          --output text)
+        
+        # Wait for query to complete
+        sleep 10
+        
+        # Get results
+        aws athena get-query-results \
+          --query-execution-id $QUERY_ID \
+          --region ${{ vars.AWS_REGION || 'us-east-1' }} \
+          --query 'ResultSet.Rows[*].Data[0].VarCharValue' \
+          --output text
+        
+        echo ""
+        echo "✅ Athena database setup complete!"
+    
+    - name: Display Setup Summary
+      if: github.event.inputs.action == 'setup'
+      run: |
+        echo "========================================="
+        echo "✅ ATHENA DATABASE SETUP COMPLETE!"
+        echo "========================================="
+        echo ""
+        echo "📊 Database: security_analytics"
+        echo "📋 Tables created:"
+        echo "  • trivy_scans"
+        echo "  • gitleaks_scans"
+        echo "  • scan_metadata"
+        echo ""
+        echo "🔗 S3 Location: s3://${{ vars.S3_SECURITY_REPORTS_BUCKET }}/"
+        echo ""
+        echo "========================================="
+        echo "Next Steps:"
+        echo "1. Run CICD pipeline to generate reports"
+        echo "2. Or run test data generator for demo"
+        echo "3. Query data in AWS Athena console"
+        echo "========================================="
+    
+    # ========================================
+    # DESTROY ACTION
+    # ========================================
+    
+    - name: Drop Athena Tables
+      if: github.event.inputs.action == 'destroy'
+      run: |
+        echo "🗑️ Dropping Athena tables..."
+        
+        # Drop tables
+        aws athena start-query-execution \
+          --query-string "DROP TABLE IF EXISTS security_analytics.trivy_scans;" \
+          --result-configuration "OutputLocation=s3://${{ vars.S3_SECURITY_REPORTS_BUCKET }}/athena-results/" \
+          --query-execution-context "Database=security_analytics" \
+          --region ${{ vars.AWS_REGION || 'us-east-1' }} || true
+        
+        sleep 3
+        
+        aws athena start-query-execution \
+          --query-string "DROP TABLE IF EXISTS security_analytics.gitleaks_scans;" \
+          --result-configuration "OutputLocation=s3://${{ vars.S3_SECURITY_REPORTS_BUCKET }}/athena-results/" \
+          --query-execution-context "Database=security_analytics" \
+          --region ${{ vars.AWS_REGION || 'us-east-1' }} || true
+        
+        sleep 3
+        
+        aws athena start-query-execution \
+          --query-string "DROP TABLE IF EXISTS security_analytics.scan_metadata;" \
+          --result-configuration "OutputLocation=s3://${{ vars.S3_SECURITY_REPORTS_BUCKET }}/athena-results/" \
+          --query-execution-context "Database=security_analytics" \
+          --region ${{ vars.AWS_REGION || 'us-east-1' }} || true
+        
+        echo "✅ Tables dropped"
+    
+    - name: Drop Athena Database
+      if: github.event.inputs.action == 'destroy'
+      run: |
+        echo "🗑️ Dropping Athena database..."
+        
+        aws athena start-query-execution \
+          --query-string "DROP DATABASE IF EXISTS security_analytics CASCADE;" \
+          --result-configuration "OutputLocation=s3://${{ vars.S3_SECURITY_REPORTS_BUCKET }}/athena-results/" \
+          --query-execution-context "Database=default" \
+          --region ${{ vars.AWS_REGION || 'us-east-1' }} || true
+        
+        echo "✅ Database dropped"
+    
+    - name: Display Destroy Summary
+      if: github.event.inputs.action == 'destroy'
+      run: |
+        echo "========================================="
+        echo "✅ ATHENA DATABASE DESTROYED!"
+        echo "========================================="
+        echo ""
+        echo "🗑️ Deleted:"
+        echo "  • security_analytics database"
+        echo "  • trivy_scans table"
+        echo "  • gitleaks_scans table"
+        echo "  • scan_metadata table"
+        echo ""
+        echo "📝 Note: S3 data is NOT deleted"
+        echo "   Use 'Infrastructure Management → destroy' to delete S3"
+        echo ""
+        echo "========================================="

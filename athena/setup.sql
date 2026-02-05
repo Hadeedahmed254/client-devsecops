@@ -11,7 +11,7 @@
 -- Create database
 CREATE DATABASE IF NOT EXISTS security_analytics
 COMMENT 'Security scan reports from CI/CD pipeline'
-LOCATION 's3://{BUCKET_NAME}/';
+LOCATION 's3://bankapp-security-reports-211125523455/';
 
 -- ========================================
 -- Trivy Vulnerability Scans Table
@@ -53,7 +53,7 @@ ROW FORMAT SERDE 'org.openx.data.jsonserde.JsonSerDe'
 WITH SERDEPROPERTIES (
   'ignore.malformed.json' = 'true'
 )
-LOCATION 's3://{BUCKET_NAME}/'
+LOCATION 's3://bankapp-security-reports-211125523455/'
 TBLPROPERTIES (
   'projection.enabled' = 'true',
   'projection.year.type' = 'integer',
@@ -64,7 +64,7 @@ TBLPROPERTIES (
   'projection.day.type' = 'integer',
   'projection.day.range' = '01,31',
   'projection.day.digits' = '2',
-  'storage.location.template' = 's3://{BUCKET_NAME}/${year}/${month}/${day}'
+  'storage.location.template' = 's3://bankapp-security-reports-211125523455/${year}/${month}/${day}'
 );
 
 -- ========================================
@@ -98,7 +98,7 @@ ROW FORMAT SERDE 'org.openx.data.jsonserde.JsonSerDe'
 WITH SERDEPROPERTIES (
   'ignore.malformed.json' = 'true'
 )
-LOCATION 's3://{BUCKET_NAME}/'
+LOCATION 's3://bankapp-security-reports-211125523455/'
 TBLPROPERTIES (
   'projection.enabled' = 'true',
   'projection.year.type' = 'integer',
@@ -109,7 +109,7 @@ TBLPROPERTIES (
   'projection.day.type' = 'integer',
   'projection.day.range' = '01,31',
   'projection.day.digits' = '2',
-  'storage.location.template' = 's3://{BUCKET_NAME}/${year}/${month}/${day}'
+  'storage.location.template' = 's3://bankapp-security-reports-211125523455/${year}/${month}/${day}'
 );
 
 -- ========================================
@@ -136,7 +136,7 @@ PARTITIONED BY (
   day STRING
 )
 ROW FORMAT SERDE 'org.openx.data.jsonserde.JsonSerDe'
-LOCATION 's3://{BUCKET_NAME}/'
+LOCATION 's3://bankapp-security-reports-211125523455/'
 TBLPROPERTIES (
   'projection.enabled' = 'true',
   'projection.year.type' = 'integer',
@@ -147,7 +147,7 @@ TBLPROPERTIES (
   'projection.day.type' = 'integer',
   'projection.day.range' = '01,31',
   'projection.day.digits' = '2',
-  'storage.location.template' = 's3://{BUCKET_NAME}/${year}/${month}/${day}'
+  'storage.location.template' = 's3://bankapp-security-reports-211125523455/${year}/${month}/${day}'
 );
 
 -- ========================================
