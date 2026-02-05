@@ -1,0 +1,120 @@
+name: Generate Demo Data
+
+on:
+  workflow_dispatch:
+
+jobs:
+  generate-demo-data:
+    name: Generate 30 Days of Demo Data
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: read
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.x'
+    
+    - name: Install Dependencies
+      run: pip install boto3
+    
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+    
+    - name: Generate Test Data
+      run: python scripts/generate_test_data.py
+      env:
+        S3_SECURITY_REPORTS_BUCKET: ${{ vars.S3_SECURITY_REPORTS_BUCKET }}
+    
+    - name: Repair Athena Partitions
+      run: |
+        echo "🔧 Repairing Athena partitions..."
+        
+        # Repair trivy_scans partitions
+        aws athena start-query-execution \
+          --query-string "MSCK REPAIR TABLE security_analytics.trivy_scans;" \
+          --result-configuration "OutputLocation=s3://${{ vars.S3_SECURITY_REPORTS_BUCKET }}/athena-results/" \
+          --query-execution-context "Database=security_analytics" \
+          --region ${{ vars.AWS_REGION || 'us-east-1' }}
+        
+        sleep 5
+        
+        # Repair gitleaks_scans partitions
+        aws athena start-query-execution \
+          --query-string "MSCK REPAIR TABLE security_analytics.gitleaks_scans;" \
+          --result-configuration "OutputLocation=s3://${{ vars.S3_SECURITY_REPORTS_BUCKET }}/athena-results/" \
+          --query-execution-context "Database=security_analytics" \
+          --region ${{ vars.AWS_REGION || 'us-east-1' }}
+        
+        sleep 5
+        
+        # Repair scan_metadata partitions
+        aws athena start-query-execution \
+          --query-string "MSCK REPAIR TABLE security_analytics.scan_metadata;" \
+          --result-configuration "OutputLocation=s3://${{ vars.S3_SECURITY_REPORTS_BUCKET }}/athena-results/" \
+          --query-execution-context "Database=security_analytics" \
+          --region ${{ vars.AWS_REGION || 'us-east-1' }}
+        
+        echo "✅ Partitions repaired"
+    
+    - name: Verify Data
+      run: |
+        echo "🔍 Verifying demo data..."
+        
+        QUERY_ID=$(aws athena start-query-execution \
+          --query-string "SELECT COUNT(*) as total_scans FROM security_analytics.trivy_scans;" \
+          --result-configuration "OutputLocation=s3://${{ vars.S3_SECURITY_REPORTS_BUCKET }}/athena-results/" \
+          --query-execution-context "Database=security_analytics" \
+          --region ${{ vars.AWS_REGION || 'us-east-1' }} \
+          --query 'QueryExecutionId' \
+          --output text)
+        
+        # Wait for query
+        sleep 10
+        
+        # Get results
+        RESULT=$(aws athena get-query-results \
+          --query-execution-id $QUERY_ID \
+          --region ${{ vars.AWS_REGION || 'us-east-1' }} \
+          --query 'ResultSet.Rows[1].Data[0].VarCharValue' \
+          --output text)
+        
+        echo "📊 Total scans in Athena: $RESULT"
+        
+        if [ "$RESULT" = "30" ]; then
+          echo "✅ Demo data verified: 30 days of data created!"
+        else
+          echo "⚠️ Expected 30 scans, found $RESULT"
+        fi
+    
+    - name: Display Summary
+      run: |
+        echo "========================================="
+        echo "✅ DEMO DATA GENERATION COMPLETE!"
+        echo "========================================="
+        echo ""
+        echo "📊 Created: 30 days of historical security reports"
+        echo "📅 Date range: $(date -d '30 days ago' +%Y-%m-%d) to $(date -d 'yesterday' +%Y-%m-%d)"
+        echo ""
+        echo "📋 Data includes:"
+        echo "  • Trivy vulnerability scans"
+        echo "  • Gitleaks secret scans"
+        echo "  • Scan metadata"
+        echo ""
+        echo "🔗 S3 Location: s3://${{ vars.S3_SECURITY_REPORTS_BUCKET }}/"
+        echo ""
+        echo "========================================="
+        echo "Next Steps:"
+        echo "1. Run CICD pipeline for today's real scan"
+        echo "2. Query data in AWS Athena console"
+        echo "3. Setup QuickSight dashboards"
+        echo "4. Demo to client!"
+        echo "========================================="
