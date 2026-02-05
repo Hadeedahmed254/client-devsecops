@@ -81,11 +81,84 @@ resource "aws_instance" "grafana_server" {
               sudo systemctl start docker
               sudo systemctl enable docker
               
-              # Run Grafana with Athena plugin pre-installed
+              # Create provisioning directories
+              mkdir -p /home/ubuntu/grafana/provisioning/datasources
+              mkdir -p /home/ubuntu/grafana/provisioning/dashboards
+              mkdir -p /home/ubuntu/grafana/dashboards
+
+              # 1. Provision Athena Data Source
+              cat > /home/ubuntu/grafana/provisioning/datasources/athena.yaml <<DS_EOF
+              apiVersion: 1
+              datasources:
+                - name: Amazon Athena
+                  type: grafana-athena-datasource
+                  access: proxy
+                  jsonData:
+                    authType: ec2_iam_role
+                    defaultRegion: us-east-1
+                    catalog: AwsDataCatalog
+                    database: security_analytics
+                    workgroup: primary
+              DS_EOF
+
+              # 2. Provision Dashboard Config
+              cat > /home/ubuntu/grafana/provisioning/dashboards/dashboards.yaml <<DB_EOF
+              apiVersion: 1
+              providers:
+                - name: 'SecurityDashboards'
+                  orgId: 1
+                  folder: ''
+                  type: file
+                  disableDeletion: false
+                  editable: true
+                  options:
+                    path: /etc/grafana/dashboards
+              DB_EOF
+
+              # 3. Create the Actual Dashboard JSON (Vulnerability Trends)
+              cat > /home/ubuntu/grafana/dashboards/security_trends.json <<JSON_EOF
+              {
+                "annotations": { "list": [] },
+                "editable": true,
+                "fiscalYearStartMonth": 0,
+                "graphTooltip": 0,
+                "links": [],
+                "panels": [
+                  {
+                    "title": "Vulnerability Trends (30 Days)",
+                    "type": "timeseries",
+                    "gridPos": { "h": 9, "w": 24, "x": 0, "y": 0 },
+                    "targets": [
+                      {
+                        "datasource": { "type": "grafana-athena-datasource", "uid": "Amazon Athena" },
+                        "format": "time_series",
+                        "rawSql": "SELECT CAST(CONCAT(year, '-', month, '-', day) AS TIMESTAMP) as time, COUNT(*) as value FROM security_analytics.trivy_scans GROUP BY year, month, day ORDER BY time",
+                        "refId": "A"
+                      }
+                    ]
+                  }
+                ],
+                "schemaVersion": 36,
+                "style": "dark",
+                "tags": ["security", "auto-demo"],
+                "templating": { "list": [] },
+                "time": { "from": "now-30d", "to": "now" },
+                "title": "Security Intelligence Dashboard"
+              }
+              JSON_EOF
+
+              # Set permissions
+              chmod -R 777 /home/ubuntu/grafana
+
+              # Run Grafana with automated provisioning
               docker run -d \
                 -p 3000:3000 \
                 --name=grafana \
+                -v /home/ubuntu/grafana/provisioning:/etc/grafana/provisioning \
+                -v /home/ubuntu/grafana/dashboards:/etc/grafana/dashboards \
                 -e "GF_INSTALL_PLUGINS=grafana-athena-datasource" \
+                -e "GF_AUTH_ANONYMOUS_ENABLED=true" \
+                -e "GF_AUTH_ANONYMOUS_ORG_ROLE=Admin" \
                 grafana/grafana:latest
               EOF
 
