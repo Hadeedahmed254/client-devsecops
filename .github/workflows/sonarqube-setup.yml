@@ -50,7 +50,7 @@ jobs:
     - name: Terraform Init
       run: |
         # Using the new independent sonar-bucket
-        terraform init -backend-config="bucket=sonar-bucket-yas-unique" -backend-config="key=sonar/terraform.tfstate" -backend-config="region=us-east-1"
+        terraform init -reconfigure -backend-config="bucket=sonar-bucket-yas-unique" -backend-config="key=sonar/terraform.tfstate" -backend-config="region=us-east-1"
 
     - name: Terraform Action
       run: terraform ${{ github.event.inputs.action }} -auto-approve
