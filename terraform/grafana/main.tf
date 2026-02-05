@@ -1,7 +1,40 @@
 
+resource "aws_vpc" "grafana_vpc" {
+  cidr_block           = "10.1.0.0/16"
+  enable_dns_hostnames = true
+  tags = { Name = "grafana-vpc" }
+}
+
+resource "aws_internet_gateway" "grafana_igw" {
+  vpc_id = aws_vpc.grafana_vpc.id
+  tags = { Name = "grafana-igw" }
+}
+
+resource "aws_subnet" "grafana_subnet" {
+  vpc_id                  = aws_vpc.grafana_vpc.id
+  cidr_block              = "10.1.1.0/24"
+  map_public_ip_on_launch = true
+  availability_zone       = "${var.aws_region}a"
+  tags = { Name = "grafana-subnet" }
+}
+
+resource "aws_route_table" "grafana_rt" {
+  vpc_id = aws_vpc.grafana_vpc.id
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.grafana_igw.id
+  }
+}
+
+resource "aws_route_table_association" "grafana_rta" {
+  subnet_id      = aws_subnet.grafana_subnet.id
+  route_table_id = aws_route_table.grafana_rt.id
+}
+
 resource "aws_security_group" "grafana_sg" {
   name        = "grafana-security-dashboard-sg"
   description = "Allow Grafana traffic"
+  vpc_id      = aws_vpc.grafana_vpc.id
 
   ingress {
     from_port   = 3000
@@ -63,6 +96,7 @@ resource "aws_iam_instance_profile" "grafana_profile" {
 resource "aws_instance" "grafana_server" {
   ami           = "ami-0b6c6ebed2801a5cb" 
   instance_type = "c7i-flex.large" # Matching SonarQube exactly
+  subnet_id     = aws_subnet.grafana_subnet.id
   
   root_block_device {
     volume_size = 20
