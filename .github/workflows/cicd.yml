@@ -168,20 +168,16 @@ jobs:
         echo "📤 Uploading security reports to S3..."
         
         aws s3 cp fs-report.json ${S3_PATH}trivy-report.json \
-          --metadata "commit=${COMMIT_SHA},branch=${BRANCH},run=${RUN_ID},date=${TIMESTAMP}" \
-          --tagging "Project=BankApp&Type=SecurityReport&Tool=Trivy&RunID=${RUN_ID}" || echo "⚠️ Trivy upload failed"
+          --metadata "commit=${COMMIT_SHA},branch=${BRANCH},run=${RUN_ID},date=${TIMESTAMP}" || echo "⚠️ Trivy upload failed"
         
         aws s3 cp snyk-report.json ${S3_PATH}snyk-report.json \
-          --metadata "commit=${COMMIT_SHA},branch=${BRANCH},run=${RUN_ID},date=${TIMESTAMP}" \
-          --tagging "Project=BankApp&Type=SecurityReport&Tool=Snyk&RunID=${RUN_ID}" || echo "⚠️ Snyk upload failed"
+          --metadata "commit=${COMMIT_SHA},branch=${BRANCH},run=${RUN_ID},date=${TIMESTAMP}" || echo "⚠️ Snyk upload failed"
         
         aws s3 cp gitleaks-report.json ${S3_PATH}gitleaks-report.json \
-          --metadata "commit=${COMMIT_SHA},branch=${BRANCH},run=${RUN_ID},date=${TIMESTAMP}" \
-          --tagging "Project=BankApp&Type=SecurityReport&Tool=Gitleaks&RunID=${RUN_ID}" || echo "⚠️ Gitleaks upload failed"
+          --metadata "commit=${COMMIT_SHA},branch=${BRANCH},run=${RUN_ID},date=${TIMESTAMP}" || echo "⚠️ Gitleaks upload failed"
         
         aws s3 cp sonarqube-export.json ${S3_PATH}sonarqube-export.json \
-          --metadata "commit=${COMMIT_SHA},branch=${BRANCH},run=${RUN_ID},date=${TIMESTAMP}" \
-          --tagging "Project=BankApp&Type=SecurityReport&Tool=SonarQube&RunID=${RUN_ID}" || echo "⚠️ SonarQube upload failed"
+          --metadata "commit=${COMMIT_SHA},branch=${BRANCH},run=${RUN_ID},date=${TIMESTAMP}" || echo "⚠️ SonarQube upload failed"
         
         aws s3 cp metadata.json ${S3_PATH}metadata.json \
           --metadata "commit=${COMMIT_SHA},branch=${BRANCH},run=${RUN_ID},date=${TIMESTAMP}" || echo "⚠️ Metadata upload failed"
