@@ -58,15 +58,15 @@ resource "aws_iam_role" "grafana_role" {
   })
 }
 
-# Attach policies so Grafana can query Athena and read S3
+# Attach policies so Grafana can query Athena and save results to S3
 resource "aws_iam_role_policy_attachment" "athena_access" {
   role       = aws_iam_role.grafana_role.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonAthenaFullAccess"
 }
 
-resource "aws_iam_role_policy_attachment" "s3_access" {
+resource "aws_iam_role_policy_attachment" "s3_full_access" {
   role       = aws_iam_role.grafana_role.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess"
+  policy_arn = "arn:aws:iam::aws:policy/AmazonS3FullAccess"
 }
 
 resource "aws_iam_instance_profile" "grafana_profile" {
@@ -106,7 +106,11 @@ resource "aws_instance" "grafana_server" {
               mkdir -p /home/ubuntu/grafana/provisioning/dashboards
               mkdir -p /home/ubuntu/grafana/dashboards
 
-              # 1. Provision Athena Data Source
+              # Get account ID for result bucket
+              ACCOUNT_ID=$(curl -s http://169.254.169.254/latest/meta-data/iam/info | grep -oP '(?<=:)[0-9]{12}')
+              RESULT_BUCKET="bankapp-security-reports-211125523455"
+
+              # 1. Provision Athena Data Source with Output Location
               cat > /home/ubuntu/grafana/provisioning/datasources/athena.yaml <<DS_EOF
               apiVersion: 1
               datasources:
@@ -119,6 +123,8 @@ resource "aws_instance" "grafana_server" {
                     catalog: AwsDataCatalog
                     database: security_analytics
                     workgroup: primary
+                  secureJsonData:
+                    s3OutputLocation: s3://$${RESULT_BUCKET}/athena-results/
               DS_EOF
 
               # 2. Provision Dashboard Config
