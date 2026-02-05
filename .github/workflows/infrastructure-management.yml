@@ -39,55 +39,33 @@ jobs:
     # DEPLOY ACTION
     # ========================================
     
-    - name: Create Terraform State Bucket (if deploying)
-      if: github.event.inputs.action == 'deploy'
+    - name: Prepare Terraform Environment
       run: |
-        BUCKET_NAME="terraform-state-$(aws sts get-caller-identity --query Account --output text)"
+        ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+        STATE_BUCKET="terraform-state-${ACCOUNT_ID}"
         
-        # Check if bucket exists
-        if aws s3 ls "s3://${BUCKET_NAME}" 2>&1 | grep -q 'NoSuchBucket'; then
-          echo "Creating state bucket: ${BUCKET_NAME}"
-          aws s3 mb "s3://${BUCKET_NAME}" --region ${{ vars.AWS_REGION || 'us-east-1' }}
-          
-          # Enable versioning
-          aws s3api put-bucket-versioning \
-            --bucket "${BUCKET_NAME}" \
-            --versioning-configuration Status=Enabled
-          
-          # Enable encryption
-          aws s3api put-bucket-encryption \
-            --bucket "${BUCKET_NAME}" \
-            --server-side-encryption-configuration '{
-              "Rules": [{
-                "ApplyServerSideEncryptionByDefault": {
-                  "SSEAlgorithm": "AES256"
-                }
-              }]
-            }'
-          
-          echo "✅ State bucket created: ${BUCKET_NAME}"
+        # Ensure State Bucket Exists
+        if ! aws s3 ls "s3://${STATE_BUCKET}" 2>&1 | grep -q 'NoSuchBucket'; then
+          echo "✅ Using existing state bucket: ${STATE_BUCKET}"
         else
-          echo "✅ State bucket already exists: ${BUCKET_NAME}"
+          echo "📦 Creating state bucket: ${STATE_BUCKET}"
+          aws s3 mb "s3://${STATE_BUCKET}" --region ${{ vars.AWS_REGION || 'us-east-1' }}
+          aws s3api put-bucket-versioning --bucket "${STATE_BUCKET}" --versioning-configuration Status=Enabled
         fi
-        
-        echo "STATE_BUCKET=${BUCKET_NAME}" >> $GITHUB_ENV
-    
-    - name: Configure Terraform Backend (if deploying)
-      if: github.event.inputs.action == 'deploy'
-      run: |
+
+        # Write Backend Config
         cat > terraform/security-reports-s3/backend.tf <<EOF
         terraform {
           backend "s3" {
-            bucket         = "${STATE_BUCKET}"
-            key            = "security-reports-s3/terraform.tfstate"
-            region         = "${{ vars.AWS_REGION || 'us-east-1' }}"
-            encrypt        = true
+            bucket  = "${STATE_BUCKET}"
+            key     = "security-reports-s3/terraform.tfstate"
+            region  = "${{ vars.AWS_REGION || 'us-east-1' }}"
+            encrypt = true
           }
         }
         EOF
-        
-        echo "✅ Backend configured with bucket: ${STATE_BUCKET}"
-    
+        echo "✅ Backend configured."
+
     - name: Terraform Init
       run: terraform init -reconfigure
       working-directory: terraform/security-reports-s3
@@ -135,26 +113,7 @@ jobs:
     # DESTROY ACTION
     # ========================================
     
-    - name: Get State Bucket Name (if destroying)
-      if: github.event.inputs.action == 'destroy'
-      run: |
-        STATE_BUCKET="terraform-state-$(aws sts get-caller-identity --query Account --output text)"
-        echo "STATE_BUCKET=${STATE_BUCKET}" >> $GITHUB_ENV
-        echo "📦 Using state bucket: ${STATE_BUCKET}"
-    
-    - name: Configure Terraform Backend (if destroying)
-      if: github.event.inputs.action == 'destroy'
-      run: |
-        cat > terraform/security-reports-s3/backend.tf <<EOF
-        terraform {
-          backend "s3" {
-            bucket         = "${STATE_BUCKET}"
-            key            = "security-reports-s3/terraform.tfstate"
-            region         = "${{ vars.AWS_REGION || 'us-east-1' }}"
-            encrypt        = true
-          }
-        }
-        EOF
+    # Destruction Logic
     
     - name: Empty S3 Buckets Before Destroy
       if: github.event.inputs.action == 'destroy'
