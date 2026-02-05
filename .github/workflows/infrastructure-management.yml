@@ -89,7 +89,7 @@ jobs:
         echo "✅ Backend configured with bucket: ${STATE_BUCKET}"
     
     - name: Terraform Init
-      run: terraform init
+      run: terraform init -reconfigure
       working-directory: terraform/security-reports-s3
     
     - name: Terraform Plan
