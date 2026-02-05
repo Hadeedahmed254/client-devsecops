@@ -120,22 +120,51 @@ jobs:
       run: |
         echo "🗑️ Emptying S3 buckets before destruction..."
         
-        # Get bucket name from Terraform state
-        SECURITY_BUCKET=$(terraform output -raw s3_bucket_name 2>/dev/null || echo "")
+        # Get bucket name safely
+        ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+        BUCKET_NAME="bankapp-security-reports-${ACCOUNT_ID}"
         
-        if [ -n "$SECURITY_BUCKET" ]; then
-          echo "Emptying security reports bucket: ${SECURITY_BUCKET}"
-          aws s3 rm "s3://${SECURITY_BUCKET}" --recursive || true
+        echo "Targeting bucket: ${BUCKET_NAME}"
+        
+        # Check if bucket exists
+        if aws s3 ls "s3://${BUCKET_NAME}" 2>&1 | grep -q 'NoSuchBucket'; then
+          echo "⚠️ Bucket ${BUCKET_NAME} not found or already deleted. Skipping."
+        else
+          echo "🚀 Cleaning all versions and markers from ${BUCKET_NAME}..."
           
-          # Delete all versions (if versioning enabled)
-          aws s3api delete-objects \
-            --bucket "${SECURITY_BUCKET}" \
-            --delete "$(aws s3api list-object-versions \
-              --bucket "${SECURITY_BUCKET}" \
-              --query '{Objects: Versions[].{Key:Key,VersionId:VersionId}}' \
-              --max-items 1000)" 2>/dev/null || true
+          # Remove all objects (standard)
+          aws s3 rm "s3://${BUCKET_NAME}" --recursive || true
           
-          echo "✅ Security bucket emptied"
+          # Remove all versions and delete markers (required for versioned buckets)
+          # We use a loop to handle large buckets
+          while :; do
+            VERSIONS=$(aws s3api list-object-versions \
+              --bucket "${BUCKET_NAME}" \
+              --max-items 1000 \
+              --output json --query '{Objects: Versions[].{Key:Key,VersionId:VersionId}, DeleteMarkers: DeleteMarkers[].{Key:Key,VersionId:VersionId}}')
+            
+            # Check if we have anything to delete
+            V_COUNT=$(echo $VERSIONS | jq '.Objects | length // 0')
+            D_COUNT=$(echo $VERSIONS | jq '.DeleteMarkers | length // 0')
+            
+            if [ "$V_COUNT" -eq "0" ] && [ "$D_COUNT" -eq "0" ]; then
+              break
+            fi
+            
+            echo "Deleting $V_COUNT versions and $D_COUNT delete markers..."
+            
+            if [ "$V_COUNT" -gt "0" ]; then
+              echo $VERSIONS | jq -c '{Objects: .Objects, Quiet: true}' > marker.json
+              aws s3api delete-objects --bucket "${BUCKET_NAME}" --delete file://marker.json || true
+            fi
+            
+            if [ "$D_COUNT" -gt "0" ]; then
+              echo $VERSIONS | jq -c '{Objects: .DeleteMarkers, Quiet: true}' > markers.json
+              aws s3api delete-objects --bucket "${BUCKET_NAME}" --delete file://markers.json || true
+            fi
+          done
+          
+          echo "✅ ${BUCKET_NAME} is now empty."
         fi
       working-directory: terraform/security-reports-s3
       continue-on-error: true
