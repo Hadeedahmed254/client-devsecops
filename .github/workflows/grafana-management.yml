@@ -1,0 +1,83 @@
+
+name: Grafana Security Dashboard
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action to perform'
+        required: true
+        type: choice
+        options:
+          - deploy
+          - destroy
+
+jobs:
+  manage-grafana:
+    name: ${{ github.event.inputs.action == 'deploy' && 'Deploy' || 'Destroy' }} Grafana
+    runs-on: ubuntu-latest
+    
+    permissions:
+      id-token: write
+      contents: read
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+
+    - name: Configure Terraform Backend
+      run: |
+        ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+        STATE_BUCKET="terraform-state-${ACCOUNT_ID}"
+        cat > terraform/grafana/backend.tfconf <<EOF
+        bucket  = "${STATE_BUCKET}"
+        key     = "grafana/terraform.tfstate"
+        region  = "${{ vars.AWS_REGION || 'us-east-1' }}"
+        encrypt = true
+        EOF
+
+    - name: Terraform Init
+      run: terraform init -backend-config=backend.tfconf
+      working-directory: terraform/grafana
+
+    - name: Terraform Deploy
+      if: github.event.inputs.action == 'deploy'
+      run: |
+        # Use a generic Ubuntu AMI for us-east-1 if none specified
+        terraform apply -auto-approve \
+          -var="aws_region=${{ vars.AWS_REGION || 'us-east-1' }}"
+      working-directory: terraform/grafana
+
+    - name: Terraform Destroy
+      if: github.event.inputs.action == 'destroy'
+      run: |
+        terraform destroy -auto-approve \
+          -var="aws_region=${{ vars.AWS_REGION || 'us-east-1' }}"
+      working-directory: terraform/grafana
+
+    - name: Display Connection Info
+      if: github.event.inputs.action == 'deploy'
+      run: |
+        URL=$(terraform output -raw grafana_url)
+        echo "========================================="
+        echo "🚀 GRAFANA SECURITY SOC READY!"
+        echo "========================================="
+        echo "URL: $URL"
+        echo "Login: admin / admin"
+        echo "========================================="
+        echo "Next Steps:"
+        echo "1. Log in and change password."
+        echo "2. Add Data Source -> Amazon Athena."
+        echo "3. Use 'Default' Auth (it uses the EC2 Role I created)."
+        echo "4. Region: ${{ vars.AWS_REGION || 'us-east-1' }}"
+        echo "5. Database: security_analytics"
+        echo "========================================="
