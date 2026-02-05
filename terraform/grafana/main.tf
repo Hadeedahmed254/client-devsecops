@@ -93,6 +93,9 @@ resource "aws_instance" "grafana_server" {
 
   user_data = <<-EOF
               #!/bin/bash
+              exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
+              echo "🚀 Starting Grafana Setup..."
+              
               sudo apt-get update
               sudo apt-get install -y docker.io
               sudo systemctl start docker
@@ -132,19 +135,16 @@ resource "aws_instance" "grafana_server" {
                     path: /etc/grafana/dashboards
               DB_EOF
 
-              # 3. Create the Actual Dashboard JSON (Vulnerability Trends)
+              # 3. Create the Actual Dashboard JSON
               cat > /home/ubuntu/grafana/dashboards/security_trends.json <<JSON_EOF
               {
                 "annotations": { "list": [] },
                 "editable": true,
-                "fiscalYearStartMonth": 0,
-                "graphTooltip": 0,
-                "links": [],
                 "panels": [
                   {
                     "title": "Vulnerability Trends (30 Days)",
                     "type": "timeseries",
-                    "gridPos": { "h": 9, "w": 24, "x": 0, "y": 0 },
+                    "gridPos": { "h": 12, "w": 24, "x": 0, "y": 0 },
                     "targets": [
                       {
                         "datasource": { "type": "grafana-athena-datasource", "uid": "Amazon Athena" },
@@ -157,26 +157,28 @@ resource "aws_instance" "grafana_server" {
                 ],
                 "schemaVersion": 36,
                 "style": "dark",
-                "tags": ["security", "auto-demo"],
-                "templating": { "list": [] },
                 "time": { "from": "now-30d", "to": "now" },
                 "title": "Security Intelligence Dashboard"
               }
               JSON_EOF
 
-              # Set permissions
+              # Fix permissions for the Grafana container user (ID 472)
               chmod -R 777 /home/ubuntu/grafana
+              chown -R 472:472 /home/ubuntu/grafana
 
-              # Run Grafana with automated provisioning
+              echo "🐳 Starting Grafana Container..."
               docker run -d \
                 -p 3000:3000 \
                 --name=grafana \
+                --restart always \
                 -v /home/ubuntu/grafana/provisioning:/etc/grafana/provisioning \
                 -v /home/ubuntu/grafana/dashboards:/etc/grafana/dashboards \
                 -e "GF_INSTALL_PLUGINS=grafana-athena-datasource" \
                 -e "GF_AUTH_ANONYMOUS_ENABLED=true" \
                 -e "GF_AUTH_ANONYMOUS_ORG_ROLE=Admin" \
                 grafana/grafana:latest
+
+              echo "✅ Setup Script Finished."
               EOF
 
   tags = {
