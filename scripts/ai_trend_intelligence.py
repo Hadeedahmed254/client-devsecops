@@ -271,7 +271,7 @@ Be specific, actionable, and use the actual data provided. Focus on WHAT TO DO, 
 """
     
     try:
-        url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={api_key}"
+        url = f"https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key={api_key}"
         
         payload = {
             "contents": [{
