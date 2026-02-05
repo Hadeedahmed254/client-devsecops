@@ -1,0 +1,228 @@
+name: Infrastructure Management
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action to perform'
+        required: true
+        type: choice
+        options:
+          - deploy
+          - destroy
+
+jobs:
+  manage-infrastructure:
+    name: ${{ github.event.inputs.action == 'deploy' && 'Deploy' || 'Destroy' }} Infrastructure
+    runs-on: ubuntu-latest
+    
+    permissions:
+      id-token: write
+      contents: read
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+    
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: 1.6.0
+    
+    # ========================================
+    # DEPLOY ACTION
+    # ========================================
+    
+    - name: Create Terraform State Bucket (if deploying)
+      if: github.event.inputs.action == 'deploy'
+      run: |
+        BUCKET_NAME="terraform-state-$(aws sts get-caller-identity --query Account --output text)"
+        
+        # Check if bucket exists
+        if aws s3 ls "s3://${BUCKET_NAME}" 2>&1 | grep -q 'NoSuchBucket'; then
+          echo "Creating state bucket: ${BUCKET_NAME}"
+          aws s3 mb "s3://${BUCKET_NAME}" --region ${{ vars.AWS_REGION || 'us-east-1' }}
+          
+          # Enable versioning
+          aws s3api put-bucket-versioning \
+            --bucket "${BUCKET_NAME}" \
+            --versioning-configuration Status=Enabled
+          
+          # Enable encryption
+          aws s3api put-bucket-encryption \
+            --bucket "${BUCKET_NAME}" \
+            --server-side-encryption-configuration '{
+              "Rules": [{
+                "ApplyServerSideEncryptionByDefault": {
+                  "SSEAlgorithm": "AES256"
+                }
+              }]
+            }'
+          
+          echo "✅ State bucket created: ${BUCKET_NAME}"
+        else
+          echo "✅ State bucket already exists: ${BUCKET_NAME}"
+        fi
+        
+        echo "STATE_BUCKET=${BUCKET_NAME}" >> $GITHUB_ENV
+    
+    - name: Configure Terraform Backend (if deploying)
+      if: github.event.inputs.action == 'deploy'
+      run: |
+        cat > terraform/security-reports-s3/backend.tf <<EOF
+        terraform {
+          backend "s3" {
+            bucket         = "${STATE_BUCKET}"
+            key            = "security-reports-s3/terraform.tfstate"
+            region         = "${{ vars.AWS_REGION || 'us-east-1' }}"
+            encrypt        = true
+          }
+        }
+        EOF
+        
+        echo "✅ Backend configured with bucket: ${STATE_BUCKET}"
+    
+    - name: Terraform Init
+      run: terraform init
+      working-directory: terraform/security-reports-s3
+    
+    - name: Terraform Plan
+      if: github.event.inputs.action == 'deploy'
+      run: terraform plan -out=tfplan
+      working-directory: terraform/security-reports-s3
+    
+    - name: Terraform Apply
+      if: github.event.inputs.action == 'deploy'
+      run: terraform apply -auto-approve tfplan
+      working-directory: terraform/security-reports-s3
+    
+    - name: Save Terraform Outputs
+      if: github.event.inputs.action == 'deploy'
+      id: tf-outputs
+      run: |
+        echo "s3_bucket=$(terraform output -raw s3_bucket_name)" >> $GITHUB_OUTPUT
+        echo "role_arn=$(terraform output -raw github_actions_role_arn)" >> $GITHUB_OUTPUT
+        echo "region=$(terraform output -raw aws_region)" >> $GITHUB_OUTPUT
+      working-directory: terraform/security-reports-s3
+    
+    - name: Display Setup Instructions
+      if: github.event.inputs.action == 'deploy'
+      run: |
+        echo "========================================="
+        echo "✅ INFRASTRUCTURE DEPLOYED SUCCESSFULLY!"
+        echo "========================================="
+        echo ""
+        echo "📋 Add these to GitHub Variables:"
+        echo ""
+        echo "AWS_REGION: ${{ steps.tf-outputs.outputs.region }}"
+        echo "AWS_ROLE_ARN: ${{ steps.tf-outputs.outputs.role_arn }}"
+        echo "S3_SECURITY_REPORTS_BUCKET: ${{ steps.tf-outputs.outputs.s3_bucket }}"
+        echo ""
+        echo "========================================="
+        echo "Next Steps:"
+        echo "1. Add the variables above to GitHub"
+        echo "2. Setup Athena database (run athena/setup.sql)"
+        echo "3. Run CICD Pipeline"
+        echo "========================================="
+    
+    # ========================================
+    # DESTROY ACTION
+    # ========================================
+    
+    - name: Get State Bucket Name (if destroying)
+      if: github.event.inputs.action == 'destroy'
+      run: |
+        STATE_BUCKET="terraform-state-$(aws sts get-caller-identity --query Account --output text)"
+        echo "STATE_BUCKET=${STATE_BUCKET}" >> $GITHUB_ENV
+        echo "📦 Using state bucket: ${STATE_BUCKET}"
+    
+    - name: Configure Terraform Backend (if destroying)
+      if: github.event.inputs.action == 'destroy'
+      run: |
+        cat > terraform/security-reports-s3/backend.tf <<EOF
+        terraform {
+          backend "s3" {
+            bucket         = "${STATE_BUCKET}"
+            key            = "security-reports-s3/terraform.tfstate"
+            region         = "${{ vars.AWS_REGION || 'us-east-1' }}"
+            encrypt        = true
+          }
+        }
+        EOF
+    
+    - name: Empty S3 Buckets Before Destroy
+      if: github.event.inputs.action == 'destroy'
+      run: |
+        echo "🗑️ Emptying S3 buckets before destruction..."
+        
+        # Get bucket name from Terraform state
+        SECURITY_BUCKET=$(terraform output -raw s3_bucket_name 2>/dev/null || echo "")
+        
+        if [ -n "$SECURITY_BUCKET" ]; then
+          echo "Emptying security reports bucket: ${SECURITY_BUCKET}"
+          aws s3 rm "s3://${SECURITY_BUCKET}" --recursive || true
+          
+          # Delete all versions (if versioning enabled)
+          aws s3api delete-objects \
+            --bucket "${SECURITY_BUCKET}" \
+            --delete "$(aws s3api list-object-versions \
+              --bucket "${SECURITY_BUCKET}" \
+              --query '{Objects: Versions[].{Key:Key,VersionId:VersionId}}' \
+              --max-items 1000)" 2>/dev/null || true
+          
+          echo "✅ Security bucket emptied"
+        fi
+      working-directory: terraform/security-reports-s3
+      continue-on-error: true
+    
+    - name: Terraform Destroy
+      if: github.event.inputs.action == 'destroy'
+      run: terraform destroy -auto-approve
+      working-directory: terraform/security-reports-s3
+    
+    - name: Delete Terraform State Bucket
+      if: github.event.inputs.action == 'destroy'
+      run: |
+        echo "🗑️ Deleting Terraform state bucket..."
+        
+        # Empty state bucket
+        aws s3 rm "s3://${STATE_BUCKET}" --recursive || true
+        
+        # Delete all versions
+        aws s3api delete-objects \
+          --bucket "${STATE_BUCKET}" \
+          --delete "$(aws s3api list-object-versions \
+            --bucket "${STATE_BUCKET}" \
+            --query '{Objects: Versions[].{Key:Key,VersionId:VersionId}}' \
+            --max-items 1000)" 2>/dev/null || true
+        
+        # Delete bucket
+        aws s3 rb "s3://${STATE_BUCKET}" --force || true
+        
+        echo "✅ State bucket deleted: ${STATE_BUCKET}"
+    
+    - name: Cleanup Complete
+      if: github.event.inputs.action == 'destroy'
+      run: |
+        echo "========================================="
+        echo "✅ INFRASTRUCTURE DESTROYED SUCCESSFULLY!"
+        echo "========================================="
+        echo ""
+        echo "🗑️ Deleted:"
+        echo "  - S3 security reports bucket"
+        echo "  - IAM roles and policies"
+        echo "  - Terraform state bucket"
+        echo ""
+        echo "📋 Next Steps:"
+        echo "  - Remove GitHub variables:"
+        echo "    • AWS_REGION"
+        echo "    • AWS_ROLE_ARN"
+        echo "    • S3_SECURITY_REPORTS_BUCKET"
+        echo ""
+        echo "========================================="
