@@ -191,7 +191,7 @@ resource "aws_instance" "grafana_server" {
               aws athena start-query-execution \
                 --query-string "MSCK REPAIR TABLE security_analytics.trivy_scans" \
                 --query-execution-context Database=security_analytics \
-                --result-configuration OutputLocation=s3://${RESULT_BUCKET}/athena-results/ \
+                --result-configuration OutputLocation=s3://$${RESULT_BUCKET}/athena-results/ \
                 --region us-east-1
 
               echo "🐳 Starting Grafana Container..."
