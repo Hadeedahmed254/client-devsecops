@@ -18,6 +18,7 @@ data "aws_caller_identity" "current" {}
 # S3 bucket for security reports
 resource "aws_s3_bucket" "security_reports" {
   bucket = "${var.bucket_prefix}-${data.aws_caller_identity.current.account_id}"
+  force_destroy = true
 
   tags = {
     Name        = "Security Reports Storage"
@@ -66,6 +67,8 @@ resource "aws_s3_bucket_lifecycle_configuration" "security_reports" {
     id     = "archive-old-reports"
     status = "Enabled"
 
+    filter {}
+
     # Transition to Glacier after 30 days
     transition {
       days          = var.glacier_transition_days
@@ -86,6 +89,8 @@ resource "aws_s3_bucket_lifecycle_configuration" "security_reports" {
   rule {
     id     = "delete-old-versions"
     status = "Enabled"
+
+    filter {}
 
     noncurrent_version_expiration {
       noncurrent_days = 30
