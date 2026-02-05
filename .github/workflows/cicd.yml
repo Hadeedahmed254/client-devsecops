@@ -86,6 +86,11 @@ jobs:
       env:
         SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
 
+    # Compile for SonarQube
+    - name: Compile Code for SonarQube
+      run: mvn clean compile
+      continue-on-error: true
+    
     # SonarQube Code Quality & Security
     - name: SonarQube Scan
       uses: SonarSource/sonarqube-scan-action@v5.0.0
