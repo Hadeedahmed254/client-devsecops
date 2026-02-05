@@ -150,12 +150,25 @@ resource "aws_instance" "grafana_server" {
                   {
                     "title": "Vulnerability Trends (30 Days)",
                     "type": "timeseries",
-                    "gridPos": { "h": 12, "w": 24, "x": 0, "y": 0 },
+                    "gridPos": { "h": 12, "w": 16, "x": 0, "y": 0 },
                     "targets": [
                       {
                         "datasource": { "type": "grafana-athena-datasource", "uid": "Amazon Athena" },
                         "format": "time_series",
                         "rawSql": "SELECT CAST(CONCAT(year, '-', month, '-', day) AS TIMESTAMP) as time, COUNT(*) as value FROM security_analytics.trivy_scans GROUP BY year, month, day ORDER BY time",
+                        "refId": "A"
+                      }
+                    ]
+                  },
+                  {
+                    "title": "Table Status (Health Check)",
+                    "type": "stat",
+                    "gridPos": { "h": 12, "w": 8, "x": 16, "y": 0 },
+                    "targets": [
+                      {
+                        "datasource": { "type": "grafana-athena-datasource", "uid": "Amazon Athena" },
+                        "format": "table",
+                        "rawSql": "SELECT 'Trivy' as table_name, COUNT(*) as total FROM security_analytics.trivy_scans UNION SELECT 'Gitleaks', COUNT(*) FROM security_analytics.gitleaks_scans",
                         "refId": "A"
                       }
                     ]
@@ -171,6 +184,15 @@ resource "aws_instance" "grafana_server" {
               # Fix permissions for the Grafana container user (ID 472)
               chmod -R 777 /home/ubuntu/grafana
               chown -R 472:472 /home/ubuntu/grafana
+
+              # One-time Athena Repair to ensure partitions are loaded
+              echo "🔨 Repairing Athena Partitions..."
+              apt-get install -y awscli
+              aws athena start-query-execution \
+                --query-string "MSCK REPAIR TABLE security_analytics.trivy_scans" \
+                --query-execution-context Database=security_analytics \
+                --result-configuration OutputLocation=s3://${RESULT_BUCKET}/athena-results/ \
+                --region us-east-1
 
               echo "🐳 Starting Grafana Container..."
               docker run -d \

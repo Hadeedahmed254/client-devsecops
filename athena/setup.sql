@@ -64,7 +64,8 @@ TBLPROPERTIES (
   'projection.day.type' = 'integer',
   'projection.day.range' = '01,31',
   'projection.day.digits' = '2',
-  'storage.location.template' = 's3://bankapp-security-reports-211125523455/${year}/${month}/${day}'
+  'storage.location.template' = 's3://bankapp-security-reports-211125523455/${year}/${month}/${day}',
+  'recursive.directories' = 'true'
 );
 
 -- ========================================
@@ -109,7 +110,8 @@ TBLPROPERTIES (
   'projection.day.type' = 'integer',
   'projection.day.range' = '01,31',
   'projection.day.digits' = '2',
-  'storage.location.template' = 's3://bankapp-security-reports-211125523455/${year}/${month}/${day}'
+  'storage.location.template' = 's3://bankapp-security-reports-211125523455/${year}/${month}/${day}',
+  'recursive.directories' = 'true'
 );
 
 -- ========================================
@@ -147,7 +149,8 @@ TBLPROPERTIES (
   'projection.day.type' = 'integer',
   'projection.day.range' = '01,31',
   'projection.day.digits' = '2',
-  'storage.location.template' = 's3://bankapp-security-reports-211125523455/${year}/${month}/${day}'
+  'storage.location.template' = 's3://bankapp-security-reports-211125523455/${year}/${month}/${day}',
+  'recursive.directories' = 'true'
 );
 
 -- ========================================
