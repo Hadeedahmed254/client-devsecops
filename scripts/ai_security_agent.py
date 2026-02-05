@@ -63,9 +63,11 @@ def get_sonar_data(host_url, token, project_key):
 def main():
     trivy_file = 'fs-report.json'
     snyk_file = 'snyk-report.json'
+    gitleaks_file = 'gitleaks-report.json'
 
     trivy_data = {}
     snyk_data = {}
+    gitleaks_data = {}
 
     if os.path.exists(trivy_file):
         with open(trivy_file, 'r') as f:
@@ -77,6 +79,13 @@ def main():
                 snyk_data = json.load(f)
         except Exception:
             snyk_data = {"error": "Failed to parse Snyk report"}
+
+    if os.path.exists(gitleaks_file):
+        try:
+            with open(gitleaks_file, 'r') as f:
+                gitleaks_data = json.load(f)
+        except Exception:
+            gitleaks_data = {"error": "Failed to parse Gitleaks report"}
 
     # SonarQube
     sonar_host = os.getenv('SONAR_HOST_URL')
@@ -132,9 +141,25 @@ def main():
     else:
         vulnerabilities_summary += "No Snyk vulnerabilities found.\n"
 
+    # Gitleaks Summary
+    vulnerabilities_summary += "\nGITLEAKS SECRET SCAN SUMMARY:\n"
+
+    if isinstance(gitleaks_data, list) and len(gitleaks_data) > 0:
+        vulnerabilities_summary += f"⚠️ Found {len(gitleaks_data)} potential secrets/credentials!\n"
+        for secret in gitleaks_data[:5]:
+            vulnerabilities_summary += (
+                f"  * [SECRET] {secret.get('Description', 'Unknown')} "
+                f"in {secret.get('File', 'Unknown file')} "
+                f"(Line: {secret.get('StartLine', 'N/A')})\n"
+            )
+    elif 'error' in gitleaks_data:
+        vulnerabilities_summary += f"Error: {gitleaks_data['error']}\n"
+    else:
+        vulnerabilities_summary += "✅ No secrets or credentials detected.\n"
+
     prompt = f"""
     You are a DevSecOps AI Assistant. Your task is to act as a post-scan intelligence layer.
-    Analyze these results from TRIVY, SNYK, and SONARQUBE for 'BankApp'.
+    Analyze these results from TRIVY, SNYK, GITLEAKS, and SONARQUBE for 'BankApp'.
     
     {vulnerabilities_summary}
     
@@ -142,10 +167,11 @@ def main():
     
     Generate a CONCISE 'Executive Security Dashboard' (Max 250 words):
     1. 🛡️ OVERALL STATUS: One sentence on the security posture.
-    2. 🚨 TOP 3 RISKS: Very brief, human-readable explanations of the 3 most dangerous issues.
+    2. 🚨 TOP 3 RISKS: Very brief, human-readable explanations of the 3 most dangerous issues (including any exposed secrets).
     3. 💡 ACTIONABLE FIXES:
        - Update [Library] to [Version] (pom.xml)
        - Refactor [File] to fix [Sonar Issue]
+       - Remove/Rotate any exposed secrets found by Gitleaks
        - Quick Dockerfile security tip.
     
     Use a clean Markdown Table or List format. Keep it punchy and professional for a high-level client demo.

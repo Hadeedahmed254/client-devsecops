@@ -1,0 +1,65 @@
+name: Weekly Security Report
+
+on:
+  schedule:
+    # Run every Monday at 9:00 AM UTC
+    - cron: '0 9 * * 1'
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  weekly-report:
+    name: Generate Weekly Security Report
+    runs-on: ubuntu-latest
+    
+    permissions:
+      id-token: write
+      contents: read
+      issues: write
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.x'
+    
+    - name: Install Dependencies
+      run: |
+        pip install requests boto3
+    
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+        aws-region: ${{ vars.AWS_REGION }}
+    
+    - name: Run AI Trend Intelligence Analysis
+      run: python scripts/ai_trend_intelligence.py
+      env:
+        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        AWS_REGION: ${{ vars.AWS_REGION }}
+        S3_SECURITY_REPORTS_BUCKET: ${{ vars.S3_SECURITY_REPORTS_BUCKET }}
+        GITHUB_STEP_SUMMARY: ${{ github.step_summary }}
+    
+    - name: Send Weekly Slack Report
+      if: always()
+      run: python scripts/weekly_slack_report.py
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      continue-on-error: true
+    
+    - name: Create GitHub Issues for Critical Vulnerabilities
+      if: always()
+      run: python scripts/auto_github_issues.py
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
+      continue-on-error: true
+    
+    - name: Upload Weekly Report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: weekly-security-report
+        path: ai-trend-report.json

@@ -4,26 +4,38 @@ on:
   workflow_dispatch:
 
 jobs:
-  compile:
+  # Step 1: Build and Test
+  build-and-test:
+    name: Build and Test
     runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v4
+    
     - name: Set up JDK 17
       uses: actions/setup-java@v4
       with:
         java-version: '17'
         distribution: 'temurin'
         cache: maven
-    - name: Build with Maven
-      run: mvn compile
-      
-  security-check:
+    
+    - name: Compile Code
+      run: mvn clean compile
+    
+    - name: Run Unit Tests
+      run: mvn test
+
+  # Step 2: Security and Quality Analysis (All security tools together)
+  security-and-quality:
+    name: Security & Quality Analysis
     runs-on: ubuntu-latest
-    needs: compile
+    needs: build-and-test
 
     steps:
     - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Full history for SonarQube
+    
     - name: Set up JDK 17
       uses: actions/setup-java@v4
       with:
@@ -31,6 +43,7 @@ jobs:
         distribution: 'temurin'
         cache: maven
 
+    # Trivy Filesystem Scan
     - name: Trivy Installation
       run: |
         sudo apt-get install -y wget apt-transport-https gnupg lsb-release
@@ -44,15 +57,18 @@ jobs:
         trivy fs --format table .
         trivy fs --format json -o fs-report.json .
 
+    # Gitleaks Secret Scanning
     - name: Gitleaks Installation
       run: |
         VERSION="8.18.2"
         wget https://github.com/gitleaks/gitleaks/releases/download/v${VERSION}/gitleaks_${VERSION}_linux_x64.tar.gz
         tar -zxvf gitleaks_${VERSION}_linux_x64.tar.gz
         sudo mv gitleaks /usr/local/bin/
-    - name: Gitleaks Code Scan
-      run: gitleaks detect source . -r gitleaks-report.json -f json
+    
+    - name: Gitleaks Secret Scan
+      run: gitleaks detect --source . --report-path gitleaks-report.json --report-format json --no-git || true
 
+    # Snyk Dependency Scan
     - name: Install Snyk CLI
       run: |
         curl https://static.snyk.io/cli/latest/snyk-linux -o snyk
@@ -62,84 +78,162 @@ jobs:
     - name: Snyk Security Scan
       run: |
         chmod +x mvnw
-        snyk test --all-projects --json-file_output=snyk-report.json || true
+        snyk test --all-projects --json-file-output=snyk-report.json || true
       env:
         SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
 
-    - name: Upload Scan Reports
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: scan-reports
-        path: |
-          fs-report.json
-          snyk-report.json
-
-  test:
-    runs-on: ubuntu-latest
-    needs: security-check
-    steps:
-    - uses: actions/checkout@v4
-    - name: Set up JDK 17
-      uses: actions/setup-java@v4
-      with:
-        java-version: '17'
-        distribution: 'temurin'
-        cache: maven
-    - name: Unit Test Cases
-      run: mvn test
-
-  build_project_and_sonar_scan:
-    runs-on: ubuntu-latest
-    needs: test
-    steps:
-    - uses: actions/checkout@v4
-    - name: Set up JDK 17
-      uses: actions/setup-java@v4
-      with:
-        java-version: '17'
-        distribution: 'temurin'
-        cache: maven
-    - name: Build Project
-      run: mvn package
-    - name: Upload JAR artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: app-jar
-        path: target/*.jar 
-        
+    # SonarQube Code Quality & Security
     - name: SonarQube Scan
       uses: SonarSource/sonarqube-scan-action@v5.0.0
       env:
         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
         
-    - name: SonarQube Quality Gate check
+    - name: SonarQube Quality Gate Check
       id: sonarqube-quality-gate-check
       uses: sonarsource/sonarqube-quality-gate-action@master
       with:
         pollingTimeoutSec: 600
       env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
 
-#   buils_docker_image_and_push:
+    # Export SonarQube results to JSON
+    - name: Export SonarQube Results
+      if: always()
+      run: |
+        curl -u "${{ secrets.SONAR_TOKEN }}:" \
+          "${{ vars.SONAR_HOST_URL }}/api/issues/search?componentKeys=GC-Bank&severities=CRITICAL,BLOCKER,MAJOR&resolved=false" \
+          -o sonarqube-export.json || echo "{}" > sonarqube-export.json
+      continue-on-error: true
+
+    # Configure AWS Credentials using OIDC
+    - name: Configure AWS Credentials
+      if: always()
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+        aws-region: ${{ vars.AWS_REGION }}
+      continue-on-error: true
+
+    # Upload Security Reports to S3
+    - name: Upload Security Reports to S3
+      if: always()
+      run: |
+        # Generate date-based path
+        DATE=$(date +%Y/%m/%d)
+        RUN_ID="${{ github.run_number }}"
+        COMMIT_SHA="${{ github.sha }}"
+        BRANCH="${{ github.ref_name }}"
+        TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+        
+        # S3 path with date organization
+        S3_BUCKET="${{ vars.S3_SECURITY_REPORTS_BUCKET }}"
+        S3_PATH="s3://${S3_BUCKET}/${DATE}/run-${RUN_ID}/"
+        
+        echo "📦 Preparing security reports for upload..."
+        
+        # Create metadata file
+        cat > metadata.json <<EOF
+        {
+          "run_id": "${RUN_ID}",
+          "commit_sha": "${COMMIT_SHA}",
+          "branch": "${BRANCH}",
+          "timestamp": "${TIMESTAMP}",
+          "workflow": "${{ github.workflow }}",
+          "actor": "${{ github.actor }}",
+          "event": "${{ github.event_name }}",
+          "reports": {
+            "trivy": "${DATE}/run-${RUN_ID}/trivy-report.json",
+            "snyk": "${DATE}/run-${RUN_ID}/snyk-report.json",
+            "gitleaks": "${DATE}/run-${RUN_ID}/gitleaks-report.json",
+            "sonarqube": "${DATE}/run-${RUN_ID}/sonarqube-export.json"
+          }
+        }
+        EOF
+        
+        # Upload all reports with metadata tags
+        echo "📤 Uploading security reports to S3..."
+        
+        aws s3 cp fs-report.json ${S3_PATH}trivy-report.json \
+          --metadata "commit=${COMMIT_SHA},branch=${BRANCH},run=${RUN_ID},date=${TIMESTAMP}" \
+          --tagging "Project=BankApp&Type=SecurityReport&Tool=Trivy&RunID=${RUN_ID}" || echo "⚠️ Trivy upload failed"
+        
+        aws s3 cp snyk-report.json ${S3_PATH}snyk-report.json \
+          --metadata "commit=${COMMIT_SHA},branch=${BRANCH},run=${RUN_ID},date=${TIMESTAMP}" \
+          --tagging "Project=BankApp&Type=SecurityReport&Tool=Snyk&RunID=${RUN_ID}" || echo "⚠️ Snyk upload failed"
+        
+        aws s3 cp gitleaks-report.json ${S3_PATH}gitleaks-report.json \
+          --metadata "commit=${COMMIT_SHA},branch=${BRANCH},run=${RUN_ID},date=${TIMESTAMP}" \
+          --tagging "Project=BankApp&Type=SecurityReport&Tool=Gitleaks&RunID=${RUN_ID}" || echo "⚠️ Gitleaks upload failed"
+        
+        aws s3 cp sonarqube-export.json ${S3_PATH}sonarqube-export.json \
+          --metadata "commit=${COMMIT_SHA},branch=${BRANCH},run=${RUN_ID},date=${TIMESTAMP}" \
+          --tagging "Project=BankApp&Type=SecurityReport&Tool=SonarQube&RunID=${RUN_ID}" || echo "⚠️ SonarQube upload failed"
+        
+        aws s3 cp metadata.json ${S3_PATH}metadata.json \
+          --metadata "commit=${COMMIT_SHA},branch=${BRANCH},run=${RUN_ID},date=${TIMESTAMP}" || echo "⚠️ Metadata upload failed"
+        
+        echo "✅ Security reports uploaded to: ${S3_PATH}"
+        echo "S3_REPORT_PATH=${S3_PATH}" >> $GITHUB_OUTPUT
+      continue-on-error: true
+
+    # Upload all security reports to GitHub Artifacts (backup)
+    - name: Upload Security Reports to GitHub Artifacts
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: security-reports
+        path: |
+          fs-report.json
+          gitleaks-report.json
+          snyk-report.json
+          sonarqube-export.json
+
+#   package:
+#     name: Package Application
 #     runs-on: ubuntu-latest
-#     needs: build_project_and_sonar_scan
-#     outputs:
-#       image_tag: ${{ steps.set_tag.outputs.tag }}
+#     needs: security-and-quality
+#     
 #     steps:
 #     - uses: actions/checkout@v4
-#     - name: Download JAR artifact
+#     
+#     - name: Set up JDK 17
+#       uses: actions/setup-java@v4
+#       with:
+#         java-version: '17'
+#         distribution: 'temurin'
+#         cache: maven
+#     
+#     - name: Build JAR Package
+#       run: mvn package -DskipTests
+#     
+#     - name: Upload JAR Artifact
+#       uses: actions/upload-artifact@v4
+#       with:
+#         name: app-jar
+#         path: target/*.jar
+
+#   build-and-push-docker:
+#     name: Build & Push Docker Image
+#     runs-on: ubuntu-latest
+#     needs: package
+#     outputs:
+#       image_tag: ${{ steps.set_tag.outputs.tag }}
+#     
+#     steps:
+#     - uses: actions/checkout@v4
+#     
+#     - name: Download JAR Artifact
 #       uses: actions/download-artifact@v4
 #       with:
 #         name: app-jar
-#         path: app 
+#         path: app
 
 #     - name: Set Image Tag
 #       id: set_tag
 #       run: echo "tag=${{ github.run_number }}" >> $GITHUB_OUTPUT
-        
+#         
 #     - name: Configure AWS Credentials
 #       uses: aws-actions/configure-aws-credentials@v4
 #       with:
@@ -151,9 +245,9 @@ jobs:
 #       id: login-ecr
 #       uses: aws-actions/amazon-ecr-login@v2
 
-#     - name: Build, tag, and push image to Amazon ECR
+#     - name: Build, Tag, and Push Image to ECR
 #       env:
-#         ECR_REGISTRY: ${{ steps.login-ecr.registry }}
+#         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
 #         ECR_REPOSITORY: bankapp
 #         IMAGE_TAG: ${{ github.run_number }}
 #       run: |
@@ -162,45 +256,64 @@ jobs:
 #         # Also tag as latest
 #         docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
 #         docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+#     
+#     - name: Trivy Docker Image Scan
+#       run: |
+#         trivy image --format table ${{ steps.login-ecr.outputs.registry }}/bankapp:${{ github.run_number }}
+#         trivy image --format json -o image-scan-report.json ${{ steps.login-ecr.outputs.registry }}/bankapp:${{ github.run_number }}
+#     
+#     - name: Upload Image Scan Report
+#       if: always()
+#       uses: actions/upload-artifact@v4
+#       with:
+#         name: docker-image-scan
+#         path: image-scan-report.json
 
-#   update-deployment:
+#   deploy:
+#     name: Deploy to Kubernetes
 #     runs-on: ubuntu-latest
-#     needs: buils_docker_image_and_push
+#     needs: build-and-push-docker
+#     
 #     steps:
 #     - uses: actions/checkout@v4
 #       with:
 #         token: ${{ secrets.GITHUB_TOKEN }}
 
-#     - name: Update ds.yml with ECR Image
+#     - name: Configure AWS Credentials
+#       uses: aws-actions/configure-aws-credentials@v4
+#       with:
+#         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+#         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+#         aws-region: us-east-1
+
+#     - name: Update Deployment Manifest
 #       run: |
-#         # Get the ECR registry from AWS CLI
 #         ECR_REGISTRY=$(aws ecr describe-registry --query 'registryId' --output text).dkr.ecr.us-east-1.amazonaws.com
 #         IMAGE_TAG=${{ github.run_number }}
 #         sed -i "s#image: .*bankapp:.*#image: $ECR_REGISTRY/bankapp:$IMAGE_TAG#g" ds.yml
-#       env:
-#         AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-#         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-#         AWS_DEFAULT_REGION: us-east-1
 
-#     - name: Commit and Push changes
+#     - name: Commit and Push Changes
 #       run: |
 #         git config --global user.name "github-actions[bot]"
 #         git config --global user.email "github-actions[bot]@users.noreply.github.com"
 #         git add ds.yml
-#         git commit -m "Update bankapp image tag to ${{ github.run_number }} in ds.yml"
+#         git commit -m "Update bankapp image tag to ${{ github.run_number }}" || echo "No changes to commit"
 #         git push
 
-  AI-Security-Intelligence:
-    name: AI Intelligence Layer
+  # AI Security Intelligence Analysis
+  ai-security-intelligence:
+    name: AI Security Intelligence
     runs-on: ubuntu-latest
-    needs: [security-check, build_project_and_sonar_scan]
+    needs: security-and-quality
     if: always()
+    
     steps:
     - uses: actions/checkout@v4
-    - name: Download Scan Reports
+    
+    - name: Download Security Reports
       uses: actions/download-artifact@v4
       with:
-        name: scan-reports
+        name: security-reports
         path: .
 
     - name: Set up Python
@@ -208,13 +321,37 @@ jobs:
       with:
         python-version: '3.x'
 
-    - name: Install dependencies
-      run: pip install requests
+    - name: Install Dependencies
+      run: pip install requests boto3
 
-    - name: AI Security Analysis
+    - name: Run AI Security Analysis (Current Scan)
       run: python scripts/ai_security_agent.py
       env:
         GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         GITHUB_STEP_SUMMARY: ${{ github.step_summary }}
         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
+    
+    - name: Configure AWS Credentials for Trend Analysis
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+        aws-region: ${{ vars.AWS_REGION }}
+      continue-on-error: true
+    
+    - name: Run AI Trend Intelligence (Historical Analysis)
+      run: python scripts/ai_trend_intelligence.py
+      env:
+        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        AWS_REGION: ${{ vars.AWS_REGION }}
+        S3_SECURITY_REPORTS_BUCKET: ${{ vars.S3_SECURITY_REPORTS_BUCKET }}
+        GITHUB_STEP_SUMMARY: ${{ github.step_summary }}
+      continue-on-error: true
+    
+    - name: Upload AI Reports
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: ai-reports
+        path: |
+          ai-trend-report.json
