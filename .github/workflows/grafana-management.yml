@@ -66,18 +66,21 @@ jobs:
 
     - name: Display Connection Info
       if: github.event.inputs.action == 'deploy'
+      working-directory: terraform/grafana
       run: |
         URL=$(terraform output -raw grafana_url)
         echo "========================================="
         echo "🚀 GRAFANA SECURITY SOC READY!"
         echo "========================================="
         echo "URL: $URL"
-        echo "Login: admin / admin"
         echo "========================================="
-        echo "Next Steps:"
-        echo "1. Log in and change password."
-        echo "2. Add Data Source -> Amazon Athena."
-        echo "3. Use 'Default' Auth (it uses the EC2 Role I created)."
-        echo "4. Region: ${{ vars.AWS_REGION || 'us-east-1' }}"
-        echo "5. Database: security_analytics"
-        echo "========================================="
+        
+        # Add to GitHub Step Summary for high visibility
+        echo "## 🚀 Grafana Security SOC Ready!" >> $GITHUB_STEP_SUMMARY
+        echo "**URL:** [$URL]($URL)" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### ⚡ Quick Start" >> $GITHUB_STEP_SUMMARY
+        echo "1. Click the URL above." >> $GITHUB_STEP_SUMMARY
+        echo "2. You will be logged in automatically (Anonymous Admin enabled)." >> $GITHUB_STEP_SUMMARY
+        echo "3. Go to **Dashboards** -> **Security Intelligence Dashboard**." >> $GITHUB_STEP_SUMMARY
+        echo "4. See your vulnerability trends immediately! 📊" >> $GITHUB_STEP_SUMMARY
