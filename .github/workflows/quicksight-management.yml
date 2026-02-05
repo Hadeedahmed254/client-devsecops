@@ -1,0 +1,88 @@
+name: QuickSight Management
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action to perform'
+        required: true
+        type: choice
+        options:
+          - deploy
+          - destroy
+
+jobs:
+  manage-quicksight:
+    name: ${{ github.event.inputs.action == 'deploy' && 'Deploy' || 'Destroy' }} QuickSight
+    runs-on: ubuntu-latest
+    
+    permissions:
+      id-token: write
+      contents: read
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+
+    - name: Search for QuickSight User ARN
+      id: qs_user
+      run: |
+        # Fetch the first available QuickSight user in the account
+        USER_ARN=$(aws quicksight list-users --aws-account-id $(aws sts get-caller-identity --query Account --output text) --namespace default --query 'UserList[0].Arn' --output text)
+        if [ "$USER_ARN" == "None" ] || [ -z "$USER_ARN" ]; then
+          echo "❌ ERROR: No QuickSight user found. Please enable QuickSight manually first."
+          exit 1
+        fi
+        echo "Found User ARN: $USER_ARN"
+        echo "arn=$USER_ARN" >> $GITHUB_OUTPUT
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+
+    - name: Configure Terraform Backend
+      run: |
+        STATE_BUCKET="terraform-state-$(aws sts get-caller-identity --query Account --output text)"
+        cat > terraform/quicksight/backend.tfconf <<EOF
+        bucket  = "${STATE_BUCKET}"
+        key     = "quicksight/terraform.tfstate"
+        region  = "${{ vars.AWS_REGION || 'us-east-1' }}"
+        encrypt = true
+        EOF
+
+    - name: Terraform Init
+      run: terraform init -backend-config=backend.tfconf
+      working-directory: terraform/quicksight
+
+    - name: Terraform Deploy
+      if: github.event.inputs.action == 'deploy'
+      run: |
+        terraform apply -auto-approve \
+          -var="quicksight_user_arn=${{ steps.qs_user.outputs.arn }}" \
+          -var="aws_region=${{ vars.AWS_REGION || 'us-east-1' }}"
+      working-directory: terraform/quicksight
+
+    - name: Terraform Destroy
+      if: github.event.inputs.action == 'destroy'
+      run: |
+        terraform destroy -auto-approve \
+          -var="quicksight_user_arn=${{ steps.qs_user.outputs.arn }}" \
+          -var="aws_region=${{ vars.AWS_REGION || 'us-east-1' }}"
+      working-directory: terraform/quicksight
+
+    - name: Post-Deployment Instructions
+      if: github.event.inputs.action == 'deploy'
+      run: |
+        echo "========================================="
+        echo "✅ QUICKSIGHT DATASET READY!"
+        echo "========================================="
+        echo "1. Log into AWS QuickSight Console."
+        echo "2. Go to 'Datasets'."
+        echo "3. You will see 'TrivyVulnerabilityTrends' ready."
+        echo "4. Click it -> 'Create Analysis' to start building charts!"
+        echo "========================================="
