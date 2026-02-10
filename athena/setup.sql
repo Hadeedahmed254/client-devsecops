@@ -115,6 +115,98 @@ TBLPROPERTIES (
 );
 
 -- ========================================
+-- Snyk Vulnerability Scans Table
+-- ========================================
+CREATE EXTERNAL TABLE IF NOT EXISTS security_analytics.snyk_scans (
+  vulnerabilities ARRAY<STRUCT<
+    id: STRING,
+    title: STRING,
+    severity: STRING,
+    packageName: STRING,
+    version: STRING,
+    fixedIn: ARRAY<STRING>,
+    from: ARRAY<STRING>,
+    upgradePath: ARRAY<STRING>,
+    isPatchable: BOOLEAN,
+    isUpgradable: BOOLEAN,
+    cvssScore: DOUBLE,
+    publicationTime: STRING,
+    disclosureTime: STRING
+  >>,
+  ok: BOOLEAN,
+  dependencyCount: INT,
+  packageManager: STRING
+)
+PARTITIONED BY (
+  year STRING,
+  month STRING,
+  day STRING
+)
+ROW FORMAT SERDE 'org.openx.data.jsonserde.JsonSerDe'
+WITH SERDEPROPERTIES (
+  'ignore.malformed.json' = 'true'
+)
+LOCATION 's3://bankapp-security-reports-211125523455/snyk/'
+TBLPROPERTIES (
+  'projection.enabled' = 'true',
+  'projection.year.type' = 'integer',
+  'projection.year.range' = '2024,2030',
+  'projection.month.type' = 'integer',
+  'projection.month.range' = '01,12',
+  'projection.month.digits' = '2',
+  'projection.day.type' = 'integer',
+  'projection.day.range' = '01,31',
+  'projection.day.digits' = '2',
+  'storage.location.template' = 's3://bankapp-security-reports-211125523455/snyk/${year}/${month}/${day}',
+  'recursive.directories' = 'true'
+);
+
+-- ========================================
+-- SonarQube Code Quality Table
+-- ========================================
+CREATE EXTERNAL TABLE IF NOT EXISTS security_analytics.sonarqube_scans (
+  component STRING,
+  measures ARRAY<STRUCT<
+    metric: STRING,
+    value: STRING,
+    bestValue: BOOLEAN
+  >>,
+  issues ARRAY<STRUCT<
+    key: STRING,
+    rule: STRING,
+    severity: STRING,
+    component: STRING,
+    line: INT,
+    message: STRING,
+    type: STRING,
+    status: STRING
+  >>
+)
+PARTITIONED BY (
+  year STRING,
+  month STRING,
+  day STRING
+)
+ROW FORMAT SERDE 'org.openx.data.jsonserde.JsonSerDe'
+WITH SERDEPROPERTIES (
+  'ignore.malformed.json' = 'true'
+)
+LOCATION 's3://bankapp-security-reports-211125523455/sonarqube/'
+TBLPROPERTIES (
+  'projection.enabled' = 'true',
+  'projection.year.type' = 'integer',
+  'projection.year.range' = '2024,2030',
+  'projection.month.type' = 'integer',
+  'projection.month.range' = '01,12',
+  'projection.month.digits' = '2',
+  'projection.day.type' = 'integer',
+  'projection.day.range' = '01,31',
+  'projection.day.digits' = '2',
+  'storage.location.template' = 's3://bankapp-security-reports-211125523455/sonarqube/${year}/${month}/${day}',
+  'recursive.directories' = 'true'
+);
+
+-- ========================================
 -- Metadata Table
 -- ========================================
 CREATE EXTERNAL TABLE IF NOT EXISTS security_analytics.scan_metadata (
@@ -158,6 +250,8 @@ TBLPROPERTIES (
 -- ========================================
 -- MSCK REPAIR TABLE security_analytics.trivy_scans;
 -- MSCK REPAIR TABLE security_analytics.gitleaks_scans;
+-- MSCK REPAIR TABLE security_analytics.snyk_scans;
+-- MSCK REPAIR TABLE security_analytics.sonarqube_scans;
 -- MSCK REPAIR TABLE security_analytics.scan_metadata;
 
 -- ========================================
