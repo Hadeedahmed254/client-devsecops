@@ -95,3 +95,12 @@ resource "aws_instance" "sonar_server" {
 output "sonarqube_url" {
   value = "http://${aws_instance.sonar_server.public_ip}:9000"
 }
+
+output "vpc_id" {
+  value = aws_vpc.sonar_vpc.id
+}
+
+output "subnet_id" {
+  value = aws_subnet.sonar_subnet.id
+}
+

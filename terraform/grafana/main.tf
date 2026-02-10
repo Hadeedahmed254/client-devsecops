@@ -1,22 +1,19 @@
 
-# Link directly to the SonarQube VPC and Subnet
-# Handle potential duplicate VPCs by fetching all matches and picking the first one
-data "aws_vpcs" "sonar_vpcs" {
-  tags = {
-    Name = "sonar-vpc"
+
+# Read VPC and Subnet from SonarQube's Terraform state
+data "terraform_remote_state" "sonarqube" {
+  backend = "s3"
+  config = {
+    bucket = "sonar-bucket-yas-unique"
+    key    = "sonar/terraform.tfstate"
+    region = "us-east-1"
   }
 }
 
-data "aws_subnets" "sonar_subnets" {
-  tags = {
-    Name = "sonar-subnet"
-  }
-}
-
-# We'll use the first ID from the lists
+# Use the VPC and Subnet from SonarQube infrastructure
 locals {
-  vpc_id    = tolist(data.aws_vpcs.sonar_vpcs.ids)[0]
-  subnet_id = tolist(data.aws_subnets.sonar_subnets.ids)[0]
+  vpc_id    = data.terraform_remote_state.sonarqube.outputs.vpc_id
+  subnet_id = data.terraform_remote_state.sonarqube.outputs.subnet_id
 }
 
 resource "aws_security_group" "grafana_sg" {
