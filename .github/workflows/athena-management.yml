@@ -80,6 +80,26 @@ jobs:
           --query-execution-context "Database=security_analytics" \
           --region ${{ vars.AWS_REGION || 'us-east-1' }} || echo "Table may already exist"
         
+        sleep 5
+        
+        # Create snyk_scans table
+        echo "Creating snyk_scans table..."
+        aws athena start-query-execution \
+          --query-string "$(sed -n '/CREATE EXTERNAL TABLE.*snyk_scans/,/^);$/p' athena/setup.sql | tr '\n' ' ')" \
+          --result-configuration "OutputLocation=s3://${{ vars.S3_SECURITY_REPORTS_BUCKET }}/athena-results/" \
+          --query-execution-context "Database=security_analytics" \
+          --region ${{ vars.AWS_REGION || 'us-east-1' }} || echo "Table may already exist"
+        
+        sleep 5
+        
+        # Create sonarqube_scans table
+        echo "Creating sonarqube_scans table..."
+        aws athena start-query-execution \
+          --query-string "$(sed -n '/CREATE EXTERNAL TABLE.*sonarqube_scans/,/^);$/p' athena/setup.sql | tr '\n' ' ')" \
+          --result-configuration "OutputLocation=s3://${{ vars.S3_SECURITY_REPORTS_BUCKET }}/athena-results/" \
+          --query-execution-context "Database=security_analytics" \
+          --region ${{ vars.AWS_REGION || 'us-east-1' }} || echo "Table may already exist"
+        
         echo "✅ All tables created"
     
     - name: Verify Tables Created
@@ -119,6 +139,8 @@ jobs:
         echo "📋 Tables created:"
         echo "  • trivy_scans"
         echo "  • gitleaks_scans"
+        echo "  • snyk_scans"
+        echo "  • sonarqube_scans"
         echo "  • scan_metadata"
         echo ""
         echo "🔗 S3 Location: s3://${{ vars.S3_SECURITY_REPORTS_BUCKET }}/"
