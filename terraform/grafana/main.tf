@@ -1,23 +1,28 @@
 
 # Link directly to the SonarQube VPC and Subnet
-data "aws_vpc" "sonar_vpc" {
-  filter {
-    name   = "tag:Name"
-    values = ["sonar-vpc"]
+# Handle potential duplicate VPCs by fetching all matches and picking the first one
+data "aws_vpcs" "sonar_vpcs" {
+  tags = {
+    Name = "sonar-vpc"
   }
 }
 
-data "aws_subnet" "sonar_subnet" {
-  filter {
-    name   = "tag:Name"
-    values = ["sonar-subnet"]
+data "aws_subnets" "sonar_subnets" {
+  tags = {
+    Name = "sonar-subnet"
   }
+}
+
+# We'll use the first ID from the lists
+locals {
+  vpc_id    = tolist(data.aws_vpcs.sonar_vpcs.ids)[0]
+  subnet_id = tolist(data.aws_subnets.sonar_subnets.ids)[0]
 }
 
 resource "aws_security_group" "grafana_sg" {
   name        = "grafana-security-dashboard-sg"
   description = "Allow Grafana traffic"
-  vpc_id      = data.aws_vpc.sonar_vpc.id
+  vpc_id      = local.vpc_id
 
   ingress {
     from_port   = 3000
@@ -79,7 +84,7 @@ resource "aws_iam_instance_profile" "grafana_profile" {
 resource "aws_instance" "grafana_server" {
   ami           = "ami-0b6c6ebed2801a5cb" 
   instance_type = "c7i-flex.large" # Matching SonarQube exactly
-  subnet_id     = data.aws_subnet.sonar_subnet.id
+  subnet_id     = local.subnet_id
   
   root_block_device {
     volume_size = 20
