@@ -125,7 +125,7 @@ CREATE EXTERNAL TABLE IF NOT EXISTS security_analytics.snyk_scans (
     packageName: STRING,
     version: STRING,
     fixedIn: ARRAY<STRING>,
-    from: ARRAY<STRING>,
+    `from`: ARRAY<STRING>,
     upgradePath: ARRAY<STRING>,
     isPatchable: BOOLEAN,
     isUpgradable: BOOLEAN,
