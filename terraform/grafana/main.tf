@@ -143,13 +143,12 @@ resource "aws_instance" "grafana_server" {
                   type: grafana-athena-datasource
                   access: proxy
                   jsonData:
-                    authType: ec2_iam_role
+                    authType: default
                     defaultRegion: us-east-1
                     catalog: AwsDataCatalog
                     database: security_analytics
                     workgroup: primary
-                  secureJsonData:
-                    s3OutputLocation: s3://$${RESULT_BUCKET}/athena-results/
+                    outputLocation: s3://$${RESULT_BUCKET}/athena-results/
               DS_EOF
 
               # 2. Provision Dashboard Config
