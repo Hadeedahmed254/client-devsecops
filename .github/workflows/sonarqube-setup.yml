@@ -58,3 +58,12 @@ jobs:
     - name: Show Sonar URL
       if: github.event.inputs.action == 'apply'
       run: terraform output sonarqube_url
+
+    - name: Destroy S3 Bucket
+      if: github.event.inputs.action == 'destroy'
+      run: |
+        echo "Emptying bucket sonar-bucket-yas-unique..."
+        aws s3 rm s3://sonar-bucket-yas-unique --recursive
+        echo "Deleting bucket..."
+        aws s3 rb s3://sonar-bucket-yas-unique --force
+
