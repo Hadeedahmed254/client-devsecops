@@ -1,19 +1,20 @@
 
 
-# Read VPC and Subnet from SonarQube's Terraform state
-data "terraform_remote_state" "sonarqube" {
-  backend = "s3"
-  config = {
-    bucket = "sonar-bucket-yas-unique"
-    key    = "sonar/terraform.tfstate"
-    region = "us-east-1"
-  }
+# Look up the SonarQube VPC by its unique CIDR block
+data "aws_vpc" "sonar_vpc" {
+  cidr_block = "10.0.0.0/16"
 }
 
-# Use the VPC and Subnet from SonarQube infrastructure
+# Look up the SonarQube subnet by CIDR and VPC
+data "aws_subnet" "sonar_subnet" {
+  vpc_id     = data.aws_vpc.sonar_vpc.id
+  cidr_block = "10.0.1.0/24"
+}
+
+# Use the VPC and Subnet IDs
 locals {
-  vpc_id    = data.terraform_remote_state.sonarqube.outputs.vpc_id
-  subnet_id = data.terraform_remote_state.sonarqube.outputs.subnet_id
+  vpc_id    = data.aws_vpc.sonar_vpc.id
+  subnet_id = data.aws_subnet.sonar_subnet.id
 }
 
 resource "aws_security_group" "grafana_sg" {
