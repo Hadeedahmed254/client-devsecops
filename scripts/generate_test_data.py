@@ -172,17 +172,45 @@ def generate_gitleaks_report(day_number):
 
 def generate_snyk_report(day_number):
     """Generate Snyk dependency scan report"""
+    
+    # Snyk finds fewer vulnerabilities than Trivy (focuses on dependencies)
+    base_vulns = 15
+    trend_factor = 1 + (day_number / 80)  # Slower increase than Trivy
+    vuln_count = int(base_vulns * trend_factor) + random.randint(-2, 3)
+    
+    vulnerabilities = []
+    
+    for i in range(vuln_count):
+        severity = random.choices(
+            ['critical', 'high', 'medium', 'low'],
+            weights=[0.1, 0.3, 0.4, 0.2]
+        )[0]
+        
+        pkg = random.choice(['lodash', 'axios', 'express', 'moment', 'react'])
+        
+        vulnerabilities.append({
+            "id": f"SNYK-JS-{pkg.upper()}-{random.randint(100000, 999999)}",
+            "title": f"{severity.capitalize()} severity vulnerability in {pkg}",
+            "severity": severity,
+            "packageName": pkg,
+            "version": f"{random.randint(1,5)}.{random.randint(0,20)}.{random.randint(0,10)}",
+            "fixedIn": [f"{random.randint(2,6)}.{random.randint(0,20)}.{random.randint(0,10)}"],
+            "from": [pkg],
+            "upgradePath": [pkg],
+            "isPatchable": random.choice([True, False]),
+            "isUpgradable": True,
+            "cvssScore": round(random.uniform(4.0, 9.5), 1),
+            "publicationTime": (datetime.now() - timedelta(days=random.randint(30, 365))).isoformat(),
+            "disclosureTime": (datetime.now() - timedelta(days=random.randint(40, 400))).isoformat()
+        })
+    
     return {
-        "vulnerabilities": [],
-        "ok": True,
-        "dependencyCount": 150,
-        "org": "bankapp",
-        "policy": "# Snyk policy file",
-        "isPrivate": True,
-        "licensesPolicy": None,
-        "packageManager": "maven",
-        "summary": "No vulnerabilities found"
+        "vulnerabilities": vulnerabilities,
+        "ok": len(vulnerabilities) == 0,
+        "dependencyCount": 150 + day_number,
+        "packageManager": "npm"
     }
+
 
 def generate_metadata(day_number, date):
     """Generate metadata file"""
