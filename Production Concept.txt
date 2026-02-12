@@ -30,3 +30,13 @@ git push -u origin develop
 git checkout develop
 git checkout -b feature/login
 git push -u origin feature/login
+
+cd c:\Users\PMYLS\Desktop\cicd
+git clone https://github.com/Hadeedahmed254/-client-devsecops-menifest.git
+cd -client-devsecops-menifest
+mkdir dev
+mkdir pre-prod
+mkdir prod
+cp ../githubactions/ds.yml dev/deployment.yaml
+cp ../githubactions/ds.yml pre-prod/deployment.yaml
+cp ../githubactions/ds.yml prod/deployment.yaml
