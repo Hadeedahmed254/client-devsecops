@@ -21,3 +21,12 @@ When merged into main, CI and CD both run and deploy to Production.
 Easy memory order:
 feature → develop → release → main
 Build → Combine → Stabilize → Launch
+
+3 BRANCHING STRATEGY COMMAND
+git pull origin main
+git checkout -b develop
+git push -u origin develop
+
+git checkout develop
+git checkout -b feature/login
+git push -u origin feature/login

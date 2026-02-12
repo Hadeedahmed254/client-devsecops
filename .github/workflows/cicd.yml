@@ -1,9 +1,18 @@
-name: CICD Pipeline 
+name: GitFlow CI/CD Pipeline
 
 on:
+  push:
+    branches: [ "main", "develop", "feature/*", "release/*", "hotfix/*" ]
+    tags: [ "v*" ]
+  pull_request:
+    branches: [ "main", "develop" ]
   workflow_dispatch:
 
 jobs:
+  # ========================================================
+  # STAGE 1: CI & Security (Runs on ALL branches)
+  # ========================================================
+  
   # Step 1: Build and Test
   build-and-test:
     name: Build and Test
@@ -25,7 +34,7 @@ jobs:
     - name: Run Unit Tests
       run: mvn test
 
-  # Step 2: Security and Quality Analysis (All security tools together)
+  # Step 2: Security and Quality Analysis
   security-and-quality:
     name: Security & Quality Analysis
     runs-on: ubuntu-latest
@@ -109,7 +118,7 @@ jobs:
         SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
       continue-on-error: true
 
-    # Export SonarQube results to JSON
+    # Export SonarQube Results
     - name: Export SonarQube Results
       if: always()
       run: |
@@ -118,9 +127,9 @@ jobs:
           -o sonarqube-export.json || echo "{}" > sonarqube-export.json
       continue-on-error: true
 
-    # Configure AWS Credentials
+    # Configure AWS Credentials (for S3 upload)
     - name: Configure AWS Credentials
-      if: always()
+      if: always() && (github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/heads/release/'))
       uses: aws-actions/configure-aws-credentials@v4
       with:
         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -130,7 +139,7 @@ jobs:
 
     # Upload Security Reports to S3
     - name: Upload Security Reports to S3
-      if: always()
+      if: always() && (github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/heads/release/'))
       run: |
         # Generate date-based path
         DATE=$(date +%Y/%m/%d)
@@ -138,11 +147,9 @@ jobs:
         COMMIT_SHA="${{ github.sha }}"
         BRANCH="${{ github.ref_name }}"
         TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-        
-        # S3 folder organization by type (required for Athena schema separation)
         S3_BUCKET="${{ vars.S3_SECURITY_REPORTS_BUCKET }}"
         
-        # Create metadata file with updated paths
+        # Create metadata file
         cat > metadata.json <<EOF
         {
           "run_id": "${RUN_ID}",
@@ -161,30 +168,15 @@ jobs:
         }
         EOF
         
-        # Upload individual reports to their dedicated type subfolders
-        echo "📤 Uploading security reports to S3..."
-        
-        aws s3 cp fs-report.json s3://${S3_BUCKET}/trivy/${DATE}/run-${RUN_ID}/trivy-report.json \
-          --metadata "commit=${COMMIT_SHA},branch=${BRANCH},run=${RUN_ID},date=${TIMESTAMP}" || echo "⚠️ Trivy upload failed"
-        
-        aws s3 cp snyk-report.json s3://${S3_BUCKET}/snyk/${DATE}/run-${RUN_ID}/snyk-report.json \
-          --metadata "commit=${COMMIT_SHA},branch=${BRANCH},run=${RUN_ID},date=${TIMESTAMP}" || echo "⚠️ Snyk upload failed"
-        
-        aws s3 cp gitleaks-report.json s3://${S3_BUCKET}/gitleaks/${DATE}/run-${RUN_ID}/gitleaks-report.json \
-          --metadata "commit=${COMMIT_SHA},branch=${BRANCH},run=${RUN_ID},date=${TIMESTAMP}" || echo "⚠️ Gitleaks upload failed"
-        
-        aws s3 cp sonarqube-export.json s3://${S3_BUCKET}/sonarqube/${DATE}/run-${RUN_ID}/sonarqube-export.json \
-          --metadata "commit=${COMMIT_SHA},branch=${BRANCH},run=${RUN_ID},date=${TIMESTAMP}" || echo "⚠️ SonarQube upload failed"
-        
-        aws s3 cp metadata.json s3://${S3_BUCKET}/metadata/${DATE}/run-${RUN_ID}/metadata.json \
-          --metadata "commit=${COMMIT_SHA},branch=${BRANCH},run=${RUN_ID},date=${TIMESTAMP}" || echo "⚠️ Metadata upload failed"
-        
-        echo "✅ Security reports uploaded to structured folders in: s3://${S3_BUCKET}/"
-        echo "S3_REPORT_PATH=s3://${S3_BUCKET}/" >> $GITHUB_OUTPUT
+        # Upload reports
+        aws s3 cp fs-report.json s3://${S3_BUCKET}/trivy/${DATE}/run-${RUN_ID}/trivy-report.json --metadata "commit=${COMMIT_SHA},branch=${BRANCH},run=${RUN_ID}" || echo "⚠️ Trivy upload failed"
+        aws s3 cp snyk-report.json s3://${S3_BUCKET}/snyk/${DATE}/run-${RUN_ID}/snyk-report.json --metadata "commit=${COMMIT_SHA},branch=${BRANCH},run=${RUN_ID}" || echo "⚠️ Snyk upload failed"
+        aws s3 cp gitleaks-report.json s3://${S3_BUCKET}/gitleaks/${DATE}/run-${RUN_ID}/gitleaks-report.json --metadata "commit=${COMMIT_SHA},branch=${BRANCH},run=${RUN_ID}" || echo "⚠️ Gitleaks upload failed"
+        aws s3 cp sonarqube-export.json s3://${S3_BUCKET}/sonarqube/${DATE}/run-${RUN_ID}/sonarqube-export.json --metadata "commit=${COMMIT_SHA},branch=${BRANCH},run=${RUN_ID}" || echo "⚠️ SonarQube upload failed"
+        aws s3 cp metadata.json s3://${S3_BUCKET}/metadata/${DATE}/run-${RUN_ID}/metadata.json --metadata "commit=${COMMIT_SHA},branch=${BRANCH},run=${RUN_ID}" || echo "⚠️ Metadata upload failed"
       continue-on-error: true
 
-    # Upload all security reports to GitHub Artifacts (backup)
-    - name: Upload Security Reports to GitHub Artifacts
+    - name: Upload Security Reports to Artifacts
       if: always()
       uses: actions/upload-artifact@v4
       with:
@@ -194,116 +186,6 @@ jobs:
           gitleaks-report.json
           snyk-report.json
           sonarqube-export.json
-
-#   package:
-#     name: Package Application
-#     runs-on: ubuntu-latest
-#     needs: security-and-quality
-#     
-#     steps:
-#     - uses: actions/checkout@v4
-#     
-#     - name: Set up JDK 17
-#       uses: actions/setup-java@v4
-#       with:
-#         java-version: '17'
-#         distribution: 'temurin'
-#         cache: maven
-#     
-#     - name: Build JAR Package
-#       run: mvn package -DskipTests
-#     
-#     - name: Upload JAR Artifact
-#       uses: actions/upload-artifact@v4
-#       with:
-#         name: app-jar
-#         path: target/*.jar
-
-#   build-and-push-docker:
-#     name: Build & Push Docker Image
-#     runs-on: ubuntu-latest
-#     needs: package
-#     outputs:
-#       image_tag: ${{ steps.set_tag.outputs.tag }}
-#     
-#     steps:
-#     - uses: actions/checkout@v4
-#     
-#     - name: Download JAR Artifact
-#       uses: actions/download-artifact@v4
-#       with:
-#         name: app-jar
-#         path: app
-
-#     - name: Set Image Tag
-#       id: set_tag
-#       run: echo "tag=${{ github.run_number }}" >> $GITHUB_OUTPUT
-#         
-#     - name: Configure AWS Credentials
-#       uses: aws-actions/configure-aws-credentials@v4
-#       with:
-#         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-#         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-#         aws-region: us-east-1
-
-#     - name: Login to Amazon ECR
-#       id: login-ecr
-#       uses: aws-actions/amazon-ecr-login@v2
-
-#     - name: Build, Tag, and Push Image to ECR
-#       env:
-#         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-#         ECR_REPOSITORY: bankapp
-#         IMAGE_TAG: ${{ github.run_number }}
-#       run: |
-#         docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-#         docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-#         # Also tag as latest
-#         docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
-#         docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
-#     
-#     - name: Trivy Docker Image Scan
-#       run: |
-#         trivy image --format table ${{ steps.login-ecr.outputs.registry }}/bankapp:${{ github.run_number }}
-#         trivy image --format json -o image-scan-report.json ${{ steps.login-ecr.outputs.registry }}/bankapp:${{ github.run_number }}
-#     
-#     - name: Upload Image Scan Report
-#       if: always()
-#       uses: actions/upload-artifact@v4
-#       with:
-#         name: docker-image-scan
-#         path: image-scan-report.json
-
-#   deploy:
-#     name: Deploy to Kubernetes
-#     runs-on: ubuntu-latest
-#     needs: build-and-push-docker
-#     
-#     steps:
-#     - uses: actions/checkout@v4
-#       with:
-#         token: ${{ secrets.GITHUB_TOKEN }}
-
-#     - name: Configure AWS Credentials
-#       uses: aws-actions/configure-aws-credentials@v4
-#       with:
-#         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-#         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-#         aws-region: us-east-1
-
-#     - name: Update Deployment Manifest
-#       run: |
-#         ECR_REGISTRY=$(aws ecr describe-registry --query 'registryId' --output text).dkr.ecr.us-east-1.amazonaws.com
-#         IMAGE_TAG=${{ github.run_number }}
-#         sed -i "s#image: .*bankapp:.*#image: $ECR_REGISTRY/bankapp:$IMAGE_TAG#g" ds.yml
-
-#     - name: Commit and Push Changes
-#       run: |
-#         git config --global user.name "github-actions[bot]"
-#         git config --global user.email "github-actions[bot]@users.noreply.github.com"
-#         git add ds.yml
-#         git commit -m "Update bankapp image tag to ${{ github.run_number }}" || echo "No changes to commit"
-#         git push
 
   # AI Security Intelligence Analysis
   ai-security-intelligence:
@@ -346,6 +228,7 @@ jobs:
       continue-on-error: true
     
     - name: Run AI Trend Intelligence (Historical Analysis)
+      if: github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/heads/release/')
       run: python scripts/ai_trend_intelligence.py
       env:
         GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
@@ -361,3 +244,170 @@ jobs:
         name: ai-reports
         path: |
           ai-trend-report.json
+
+  # ========================================================
+  # STAGE 2: Package Application
+  # Runs on 'develop', 'release/*', and Tags
+  # ========================================================
+  package:
+    name: Package Application
+    runs-on: ubuntu-latest
+    needs: ai-security-intelligence
+    # Only run package/deploy steps on specific branches, not feature branches
+    if: github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/tags/v')
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+        cache: maven
+    
+    - name: Build JAR Package
+      run: mvn package -DskipTests
+    
+    - name: Upload JAR Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: app-jar
+        path: target/*.jar
+        retention-days: 1
+
+  # ========================================================
+  # STAGE 3: Deploy to Environments
+  # ========================================================
+
+  # 3.1 Deploy to DEV (On push to 'develop')
+  deploy-dev:
+    name: Deploy to Dev
+    runs-on: ubuntu-latest
+    needs: package
+    if: github.ref == 'refs/heads/develop'
+    environment: development
+    
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/download-artifact@v4
+      with:
+        name: app-jar
+        path: target/
+        
+    - name: Configure AWS Credentials (Dev)
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }} # Dev Environment Secret
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ vars.AWS_REGION }}
+
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+
+    - name: Build & Push Docker Image (Dev)
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        ECR_REPOSITORY: bankapp
+        IMAGE_TAG: dev-${{ github.sha }}
+      run: |
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+        echo "Pushed: $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+
+    - name: Deploy to K8s (Dev Namespace)
+      env:
+        KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }} # Dev Environment Secret
+      run: |
+        echo "Deploying to Kubernetes Namespace: dev"
+        # kubectl apply -f k8s/ -n dev
+
+  # 3.2 Deploy to PRE-PROD (On push to 'release/*')
+  deploy-pre-prod:
+    name: Deploy to Pre-Prod
+    runs-on: ubuntu-latest
+    needs: package
+    if: startsWith(github.ref, 'refs/heads/release/')
+    environment: pre-production
+    
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/download-artifact@v4
+      with:
+        name: app-jar
+        path: target/
+        
+    - name: Configure AWS Credentials (Pre-Prod)
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }} # Pre-Prod Environment Secret
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ vars.AWS_REGION }}
+
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+
+    - name: Build & Push Docker Image (RC)
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        ECR_REPOSITORY: bankapp
+        IMAGE_TAG: rc-${{ github.sha }}
+      run: |
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+        echo "Pushed: $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+
+    - name: Deploy to K8s (Pre-Prod Namespace)
+      env:
+        KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }} # Pre-Prod Environment Secret
+      run: |
+        echo "Deploying to Kubernetes Namespace: pre-prod"
+        # kubectl apply -f k8s/ -n pre-prod
+
+  # 3.3 Deploy to PROD (On Tag v*)
+  deploy-prod:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: package
+    if: startsWith(github.ref, 'refs/tags/v')
+    environment: production # Requires Approval
+    
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/download-artifact@v4
+      with:
+        name: app-jar
+        path: target/
+        
+    - name: Configure AWS Credentials (Prod)
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }} # Prod Environment Secret
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ vars.AWS_REGION }}
+
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+
+    - name: Build & Push Docker Image (Prod)
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        ECR_REPOSITORY: bankapp
+        IMAGE_TAG: ${{ github.ref_name }} # e.g., v1.0.0
+      run: |
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+        # Also tag latest
+        docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+        echo "Pushed: $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+
+    - name: Deploy to K8s (Prod Namespace)
+      env:
+        KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }} # Prod Environment Secret
+      run: |
+        echo "Deploying to Kubernetes Namespace: prod"
+        # kubectl apply -f k8s/ -n prod
