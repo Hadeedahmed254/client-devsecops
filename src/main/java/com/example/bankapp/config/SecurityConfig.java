@@ -30,6 +30,7 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(authz -> authz
                         .requestMatchers("/register").permitAll()
+                        .requestMatchers("/health", "/ready").permitAll()  // Allow health checks
                         .anyRequest().authenticated()
                 )
                 .formLogin(form -> form

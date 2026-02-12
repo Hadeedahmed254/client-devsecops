@@ -1,0 +1,23 @@
+1)Add Health Checks
+Developer writes /health and /ready endpoints → Kubernetes monitors app health
+I add .permitAll() in SecurityConfig → Kubernetes accesses without login
+For testing: H2 in pom.xml (downloads library) + application.properties (configures it) → temporary, remove before production
+I create production Dockerfile → multi-stage build, non-root user, optimized
+Production: Remove H2, keep health endpoints + permitAll + Dockerfile → Kubernetes uses probes to auto-restart/route traffic
+
+2) BRANCHING STRATEGY 
+There is one main branch, it contains stable production code.
+Develop branch is created from main, all current development happens here, not in main.
+Developers create feature branches from develop (feature1, feature2, etc.).
+Each developer works in their own feature branch.
+When feature work is completed, they open a PR to merge feature into develop.
+When feature branch is pushed, only CI runs (build, test, checks).
+When PR is opened and merged into develop, CI runs and CD deploys to Dev environment.
+Develop branch may be unstable because multiple features are combined there.
+When features are complete and we want to prepare for release, we create a release branch from develop.
+Release branch is used only for bug fixes and final testing (Pre-Prod environment). CI and CD both run and deploy to Pre-Prod.
+When release is stable, it is merged into main branch.
+When merged into main, CI and CD both run and deploy to Production.
+Easy memory order:
+feature → develop → release → main
+Build → Combine → Stabilize → Launch
