@@ -316,12 +316,31 @@ jobs:
         docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
         echo "Pushed: $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
 
-    - name: Deploy to K8s (Dev Namespace)
+    - name: Deploy to K8s (GitOps - Update Manifest Repo)
       env:
-        KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }} # Dev Environment Secret
+        MANIFEST_REPO: "https://x-access-token:${{ secrets.MANIFEST_REPO_TOKEN }}@github.com/Hadeedahmed254/client-devsecops-menifest.git"
+        IMAGE_TAG: dev-${{ github.sha }}
       run: |
-        echo "Deploying to Kubernetes Namespace: dev"
-        # kubectl apply -f k8s/ -n dev
+        echo "Updating manifest in GitOps Repo..."
+        git clone $MANIFEST_REPO manifest-repo
+        cd manifest-repo
+        
+        # Check if file exists
+        if [ ! -f dev/deployment.yaml ]; then
+          echo "Error: dev/deployment.yaml not found!"
+          exit 1
+        fi
+
+        # Update Image Tag
+        sed -i "s|image: .*bankapp:.*|image: ${{ steps.login-ecr.outputs.registry }}/bankapp:$IMAGE_TAG|g" dev/deployment.yaml
+        
+        # Commit and Push
+        git config user.name "GitHub Actions"
+        git config user.email "actions@github.com"
+        git add dev/deployment.yaml
+        git commit -m "Update Dev Image to $IMAGE_TAG" || echo "No changes to commit"
+        git push
+        echo "✅ Manifest updated for Dev environment."
 
   # 3.2 Deploy to PRE-PROD (On push to 'release/*')
   deploy-pre-prod:
@@ -359,12 +378,31 @@ jobs:
         docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
         echo "Pushed: $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
 
-    - name: Deploy to K8s (Pre-Prod Namespace)
+    - name: Deploy to K8s (GitOps - Update Manifest Repo)
       env:
-        KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }} # Pre-Prod Environment Secret
+        MANIFEST_REPO: "https://x-access-token:${{ secrets.MANIFEST_REPO_TOKEN }}@github.com/Hadeedahmed254/client-devsecops-menifest.git"
+        IMAGE_TAG: rc-${{ github.sha }}
       run: |
-        echo "Deploying to Kubernetes Namespace: pre-prod"
-        # kubectl apply -f k8s/ -n pre-prod
+        echo "Updating manifest in GitOps Repo..."
+        git clone $MANIFEST_REPO manifest-repo
+        cd manifest-repo
+        
+        # Check if file exists
+        if [ ! -f pre-prod/deployment.yaml ]; then
+          echo "Error: pre-prod/deployment.yaml not found!"
+          exit 1
+        fi
+
+        # Update Image Tag
+        sed -i "s|image: .*bankapp:.*|image: ${{ steps.login-ecr.outputs.registry }}/bankapp:$IMAGE_TAG|g" pre-prod/deployment.yaml
+        
+        # Commit and Push
+        git config user.name "GitHub Actions"
+        git config user.email "actions@github.com"
+        git add pre-prod/deployment.yaml
+        git commit -m "Update Pre-Prod Image to $IMAGE_TAG" || echo "No changes to commit"
+        git push
+        echo "✅ Manifest updated for Pre-Prod environment."
 
   # 3.3 Deploy to PROD (On Tag v*)
   deploy-prod:
@@ -405,9 +443,28 @@ jobs:
         docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
         echo "Pushed: $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
 
-    - name: Deploy to K8s (Prod Namespace)
+    - name: Deploy to K8s (GitOps - Update Manifest Repo)
       env:
-        KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }} # Prod Environment Secret
+        MANIFEST_REPO: "https://x-access-token:${{ secrets.MANIFEST_REPO_TOKEN }}@github.com/Hadeedahmed254/client-devsecops-menifest.git"
+        IMAGE_TAG: ${{ github.ref_name }}
       run: |
-        echo "Deploying to Kubernetes Namespace: prod"
-        # kubectl apply -f k8s/ -n prod
+        echo "Updating manifest in GitOps Repo..."
+        git clone $MANIFEST_REPO manifest-repo
+        cd manifest-repo
+        
+        # Check if file exists
+        if [ ! -f prod/deployment.yaml ]; then
+          echo "Error: prod/deployment.yaml not found!"
+          exit 1
+        fi
+
+        # Update Image Tag
+        sed -i "s|image: .*bankapp:.*|image: ${{ steps.login-ecr.outputs.registry }}/bankapp:$IMAGE_TAG|g" prod/deployment.yaml
+        
+        # Commit and Push
+        git config user.name "GitHub Actions"
+        git config user.email "actions@github.com"
+        git add prod/deployment.yaml
+        git commit -m "Update Prod Image to $IMAGE_TAG" || echo "No changes to commit"
+        git push
+        echo "✅ Manifest updated for Prod environment."
