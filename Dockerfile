@@ -1,4 +1,4 @@
-# Stage 1: Build the application
+# okay bossStage 1: Build the application
 FROM eclipse-temurin:17-jdk-alpine AS build
 WORKDIR /app
 
