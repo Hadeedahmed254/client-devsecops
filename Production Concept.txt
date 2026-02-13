@@ -92,3 +92,35 @@ If a new version exists, Flyway runs it once and records it.
 Flyway never guesses, never auto-drops columns — it only runs what YOU wrote.
 Old migration files must never be edited; if you need changes, create a new version.
 
+________>code for visualization
+-- Create Account Table
+CREATE TABLE IF NOT EXISTS account (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    username VARCHAR(255) NOT NULL,
+    password VARCHAR(255) NOT NULL,
+    balance DECIMAL(19,2),
+    UNIQUE (username)
+);
+
+-- Create Transaction Table
+CREATE TABLE IF NOT EXISTS transaction (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    amount DECIMAL(19,2),
+    type VARCHAR(255),
+    timestamp DATETIME(6),
+    account_id BIGINT,
+    FOREIGN KEY (account_id) REFERENCES account(id)
+);
+
+spring.jpa.hibernate.ddl-auto=validate
+spring.flyway.enabled=true
+spring.flyway.baseline-on-migrate=true
+
+<dependency>
+			<groupId>org.flywaydb</groupId>
+			<artifactId>flyway-core</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.flywaydb</groupId>
+			<artifactId>flyway-mysql</artifactId>
+		</dependency>
