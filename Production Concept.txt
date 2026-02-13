@@ -48,3 +48,15 @@ git push origin main
 git checkout develop
 git merge feature/login
 git push origin develop
+
+
+git checkout develop
+git pull origin develop
+git checkout -b release/v1.0.0
+git push -u origin release/v1.0.0
+
+
+git checkout main
+git pull origin main
+git merge release/v1.0.0
+git push origin main
