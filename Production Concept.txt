@@ -60,3 +60,35 @@ git checkout main
 git pull origin main
 git merge release/v1.0.0
 git push origin main
+
+git checkout develop
+git merge --no-ff -m "Sync: Merge release/v1.0.0 back to develop [skip ci]" release/v1.0.0
+git push origin develop
+
+
+4) APP Monitoring Concept 
+• Spring Boot Actuator adds internal endpoints like /health and /metrics to expose app status and performance
+• Micrometer collects those metrics in a standard way inside the app
+• Micrometer uses a registry to choose the monitoring system format (Prometheus, CloudWatch, etc.)
+• With the Prometheus registry, metrics appear at /actuator/prometheus
+• Prometheus scrapes that endpoint regularly
+• Prometheus stores the data for graphs, alerts, and trend analysis
+
+________>code for visualization
+  <dependency> 
+<groupId>io.micrometer</groupId> <artifactId>micrometer-registry-prometheus</artifactId> <scope>runtime</scope> </dependency> <dependency> <groupId>org.springframework.boot</groupId> <artifactId>spring-boot-starter-actuator</artifactId> </dependency> 
+management.endpoints.web.exposure.include=health,info,prometheus management.endpoint.prometheus.enabled=true management.metrics.export.prometheus.enabled=true
+
+
+5) DB migration 
+ddl-auto=update lets Hibernate automatically change the database structure.
+This is dangerous in production because it can drop or alter important data accidentally.
+Instead, we use Flyway to control database changes safely.
+With Flyway, we write SQL files ourselves (e.g., V1__create_table.sql).
+Each file represents a database version (V1, V2, V3…).
+When the app starts, Flyway checks a table called flyway_schema_history.
+If a version is already recorded there, Flyway skips it.
+If a new version exists, Flyway runs it once and records it.
+Flyway never guesses, never auto-drops columns — it only runs what YOU wrote.
+Old migration files must never be edited; if you need changes, create a new version.
+
