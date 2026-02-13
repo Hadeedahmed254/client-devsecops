@@ -22,8 +22,10 @@ Easy memory order:
 feature → develop → release → main
 Build → Combine → Stabilize → Launch
 
-3 BRANCHING STRATEGY COMMAND
-git pull origin main
+
+
+3) BRANCHING STRATEGY CODE
+git checkout main
 git checkout -b develop
 git push -u origin develop
 
@@ -31,12 +33,18 @@ git checkout develop
 git checkout -b feature/login
 git push -u origin feature/login
 
-cd c:\Users\PMYLS\Desktop\cicd
-git clone https://github.com/Hadeedahmed254/-client-devsecops-menifest.git
-cd -client-devsecops-menifest
+git clone https://github.com/YourUsername/manifest-repo.git
+cd manifest-repo
 mkdir dev
 mkdir pre-prod
 mkdir prod
-cp ../githubactions/ds.yml dev/deployment.yaml
-cp ../githubactions/ds.yml pre-prod/deployment.yaml
-cp ../githubactions/ds.yml prod/deployment.yaml
+cp ../app-repo/ds.yml dev/deployment.yaml
+cp ../app-repo/ds.yml pre-prod/deployment.yaml
+cp ../app-repo/ds.yml prod/deployment.yaml
+git add .
+git commit -m "Initial GitOps structure"
+git push origin main
+
+git checkout develop
+git merge feature/login
+git push origin develop
