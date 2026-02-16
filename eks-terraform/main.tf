@@ -6,7 +6,7 @@ provider "aws" {
 # IAM Role for EKS Cluster
 # ----------------------------
 resource "aws_iam_role" "master" {
-  name = "yaswanth-eks-master1"
+  name = "hadeed-eks-master1"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17",
@@ -39,7 +39,7 @@ resource "aws_iam_role_policy_attachment" "AmazonEKSVPCResourceController" {
 # IAM Role for Worker Nodes
 # ----------------------------
 resource "aws_iam_role" "worker" {
-  name = "yaswanth-eks-worker1"
+  name = "hadeed-eks-worker1"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17",
@@ -54,7 +54,7 @@ resource "aws_iam_role" "worker" {
 }
 
 resource "aws_iam_policy" "autoscaler" {
-  name = "yaswanth-eks-autoscaler-policy1"
+  name = "hadeed-eks-autoscaler-policy1"
   policy = jsonencode({
     Version = "2012-10-17",
     Statement = [{
@@ -105,7 +105,7 @@ resource "aws_iam_role_policy_attachment" "autoscaler" {
 
 resource "aws_iam_instance_profile" "worker" {
   depends_on = [aws_iam_role.worker]
-  name       = "yaswanth-eks-worker-profile1"
+  name       = "hadeed-eks-worker-profile1"
   role       = aws_iam_role.worker.name
 }
 
@@ -131,7 +131,8 @@ resource "aws_internet_gateway" "igw" {
   }
 }
 
-resource "aws_subnet" "subnet-1" {
+# --- PUBLIC SUBNETS (The Lobby) ---
+resource "aws_subnet" "public-1" {
   vpc_id                  = aws_vpc.main.id
   cidr_block              = "10.0.1.0/24"
   availability_zone       = "us-east-1a"
@@ -140,11 +141,11 @@ resource "aws_subnet" "subnet-1" {
   tags = {
     Name                                = "Public-Subnet-1"
     "kubernetes.io/cluster/project-eks" = "shared"
-    "kubernetes.io/role/elb"            = "1"
+    "kubernetes.io/role/elb"            = "1" # Important for Public Load Balancers
   }
 }
 
-resource "aws_subnet" "subnet-2" {
+resource "aws_subnet" "public-2" {
   vpc_id                  = aws_vpc.main.id
   cidr_block              = "10.0.2.0/24"
   availability_zone       = "us-east-1b"
@@ -157,7 +158,71 @@ resource "aws_subnet" "subnet-2" {
   }
 }
 
-resource "aws_route_table" "rt" {
+# --- PRIVATE SUBNETS (The Vault) ---
+resource "aws_subnet" "private-1" {
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = "10.0.3.0/24"
+  availability_zone       = "us-east-1a"
+  map_public_ip_on_launch = false # No Public IPs!
+
+  tags = {
+    Name                                = "Private-Subnet-1"
+    "kubernetes.io/cluster/project-eks" = "shared"
+    "kubernetes.io/role/internal-elb"   = "1" # Important for Private Load Balancers
+  }
+}
+
+resource "aws_subnet" "private-2" {
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = "10.0.4.0/24"
+  availability_zone       = "us-east-1b"
+  map_public_ip_on_launch = false
+
+  tags = {
+    Name                                = "Private-Subnet-2"
+    "kubernetes.io/cluster/project-eks" = "shared"
+    "kubernetes.io/role/internal-elb"   = "1"
+  }
+}
+
+# --- NAT GATEWAYS (The Security Guards - Multi-AZ HA) ---
+
+# NAT Gateway 1 (AZ-1)
+resource "aws_eip" "nat1" {
+  domain = "vpc"
+}
+
+resource "aws_nat_gateway" "nat1" {
+  allocation_id = aws_eip.nat1.id
+  subnet_id     = aws_subnet.public-1.id
+
+  tags = {
+    Name = "EKS-NAT-Gateway-1"
+  }
+
+  depends_on = [aws_internet_gateway.igw]
+}
+
+# NAT Gateway 2 (AZ-2 - God Level Redundancy)
+resource "aws_eip" "nat2" {
+  domain = "vpc"
+}
+
+resource "aws_nat_gateway" "nat2" {
+  allocation_id = aws_eip.nat2.id
+  subnet_id     = aws_subnet.public-2.id
+
+  tags = {
+    Name = "EKS-NAT-Gateway-2"
+  }
+
+  depends_on = [aws_internet_gateway.igw]
+}
+
+# --- ROUTE TABLES (The Maps) ---
+
+# Public Map: Go to IGW
+resource "aws_route_table" "public" {
   vpc_id = aws_vpc.main.id
 
   route {
@@ -170,14 +235,54 @@ resource "aws_route_table" "rt" {
   }
 }
 
-resource "aws_route_table_association" "a1" {
-  subnet_id      = aws_subnet.subnet-1.id
-  route_table_id = aws_route_table.rt.id
+# Private Map 1 (AZ-1): Uses NAT 1
+resource "aws_route_table" "private1" {
+  vpc_id = aws_vpc.main.id
+
+  route {
+    cidr_block     = "0.0.0.0/0"
+    nat_gateway_id = aws_nat_gateway.nat1.id
+  }
+
+  tags = {
+    Name = "Private-RT-1"
+  }
 }
 
-resource "aws_route_table_association" "a2" {
-  subnet_id      = aws_subnet.subnet-2.id
-  route_table_id = aws_route_table.rt.id
+# Private Map 2 (AZ-2): Uses NAT 2
+resource "aws_route_table" "private2" {
+  vpc_id = aws_vpc.main.id
+
+  route {
+    cidr_block     = "0.0.0.0/0"
+    nat_gateway_id = aws_nat_gateway.nat2.id
+  }
+
+  tags = {
+    Name = "Private-RT-2"
+  }
+}
+
+# --- ASSOCIATIONS ---
+
+resource "aws_route_table_association" "public-1" {
+  subnet_id      = aws_subnet.public-1.id
+  route_table_id = aws_route_table.public.id
+}
+
+resource "aws_route_table_association" "public-2" {
+  subnet_id      = aws_subnet.public-2.id
+  route_table_id = aws_route_table.public.id
+}
+
+resource "aws_route_table_association" "private-1" {
+  subnet_id      = aws_subnet.private-1.id
+  route_table_id = aws_route_table.private1.id
+}
+
+resource "aws_route_table_association" "private-2" {
+  subnet_id      = aws_subnet.private-2.id
+  route_table_id = aws_route_table.private2.id
 }
 
 resource "aws_security_group" "eks_sg" {
@@ -230,19 +335,22 @@ resource "aws_security_group" "eks_sg" {
 }
 
 # ----------------------------
-# EKS Cluster
+# EKS Cluster (The Brain)
 # ----------------------------
 resource "aws_eks_cluster" "eks" {
   name     = "project-eks"
   role_arn = aws_iam_role.master.arn
 
   vpc_config {
-    subnet_ids         = [aws_subnet.subnet-1.id, aws_subnet.subnet-2.id]
+    # Connected to ALL subnets (Public & Private)
+    subnet_ids         = [aws_subnet.public-1.id, aws_subnet.public-2.id, aws_subnet.private-1.id, aws_subnet.private-2.id]
     security_group_ids = [aws_security_group.eks_sg.id]
+    endpoint_private_access = true
+    endpoint_public_access  = true
   }
 
   tags = {
-    Name        = "yaswanth-eks-cluster"
+    Name        = "hadeed-eks-cluster"
     Environment = "dev"
     Terraform   = "true"
   }
@@ -256,16 +364,19 @@ resource "aws_eks_cluster" "eks" {
 
 
 # ----------------------------
-# EKS Node Group
+# EKS Node Group (The Workers)
 # ----------------------------
 resource "aws_eks_node_group" "node-grp" {
   cluster_name    = aws_eks_cluster.eks.name
   node_group_name = var.node_group_name
   node_role_arn   = aws_iam_role.worker.arn
-  subnet_ids      = [aws_subnet.subnet-1.id, aws_subnet.subnet-2.id]
+  
+  # GOD LEVEL: Nodes deployed in PRIVATE Subnets
+  subnet_ids      = [aws_subnet.private-1.id, aws_subnet.private-2.id]
+  
   capacity_type   = "ON_DEMAND"
   disk_size       = 20
-  instance_types  = ["t2.large"]
+  instance_types  = ["c7i-flex.large"]
 
   labels = {
     env = "dev"
