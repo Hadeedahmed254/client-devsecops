@@ -7,8 +7,7 @@ resource "aws_s3_bucket" "bucket1" {
 
   tags = {
     Name        = "statefile-storage"
-    Environment = "dev"
-  }
+   }
 }
 
 resource "aws_s3_bucket_versioning" "bucket1_versioning" {
@@ -22,8 +21,7 @@ resource "aws_s3_bucket" "bucket2" {
   bucket = "misc-bucket-2"
 
   tags = {
-    Name        = "statefile-storage-1"
-    Environment = "dev"
+    Name        = "statefile-storage-1" 
   }
 }
 
