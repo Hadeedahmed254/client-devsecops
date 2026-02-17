@@ -421,3 +421,49 @@ resource "aws_iam_openid_connect_provider" "eks_oidc" {
   thumbprint_list = [data.tls_certificate.oidc_thumbprint.certificates[0].sha1_fingerprint]
   url             = data.aws_eks_cluster.eks_oidc.identity[0].oidc[0].issuer
 }
+# ----------------------------
+# ArgoCD Installation (Automatic God Level Setup)
+# ----------------------------
+
+# 1. Fetch Auth Token from AWS for EKS
+data "aws_eks_cluster_auth" "cluster" {
+  name = aws_eks_cluster.eks.name
+}
+
+# 2. Configure Helm Provider to talk to your new Cluster
+provider "helm" {
+  kubernetes {
+    host                   = aws_eks_cluster.eks.endpoint
+    cluster_ca_certificate = base64decode(aws_eks_cluster.eks.certificate_authority[0].data)
+    token                  = data.aws_eks_cluster_auth.cluster.token
+  }
+}
+
+# 3. Install ArgoCD via Helm
+resource "helm_release" "argocd" {
+  name       = "argocd"
+  repository = "https://argoproj.github.io/argo-helm"
+  chart      = "argo-cd"
+  namespace  = "argocd"
+  create_namespace = true
+  version    = "5.46.7" # Stable Version
+
+  # This gives you a Public URL to access the ArgoCD UI!
+  set {
+    name  = "server.service.type"
+    value = "LoadBalancer"
+  }
+
+  # Disables HTTPS for easier initial learning (can be enabled with certificates later)
+  set {
+    name  = "server.extraArgs"
+    value = "{--insecure}"
+  }
+
+  depends_on = [aws_eks_node_group.node-grp]
+}
+
+# Output the ArgoCD URL so you know where to go!
+output "argocd_loadbalancer_url" {
+  value = "Wait for LB to provision, then check AWS Console or kubectl get svc -n argocd"
+}

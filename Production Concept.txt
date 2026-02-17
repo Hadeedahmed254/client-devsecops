@@ -143,3 +143,20 @@ Table 2: Map 0.0.0.0/0 → NAT Gateway 2 (Attach to Private Subnet 2).
 Create EKS Cluster: Spanning all 4 subnets (Public+Private).
 Create Node Group: Launch Worker Nodes inside ONLY the Private Subnets.
 
+7)Gitops
+Base contains the main application YAML that is the same for all environments.
+Overlays only change what is different for each environment such as image tag, replicas, and labels.
+The CI pipeline updates the image version inside the overlay instead of editing deployment files.
+The updated overlay is committed to Git.
+ArgoCD continuously watches the Git repository for changes.
+When Git changes, ArgoCD runs Kustomize to merge the base and overlay into final Kubernetes manifests.
+Kubernetes automatically updates to match what is stored in Git.
+Base defines the application, overlay defines the environment, Git is the source of truth, and ArgoCD enforces it in the cluster.
+If it is not in Git, it should not be running in Kubernetes.
+
+8)HELM
+Helm is a Kubernetes package manager that simplifies deploying and managing applications.
+
+A Helm Chart is a packaged collection of Kubernetes manifests and configuration values that define an application.
+
+Helm uses charts to install, upgrade, rollback, and version applications in a consistent way.

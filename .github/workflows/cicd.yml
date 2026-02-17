@@ -325,22 +325,23 @@ jobs:
         git clone $MANIFEST_REPO manifest-repo
         cd manifest-repo
         
-        # Check if file exists
-        if [ ! -f dev/deployment.yaml ]; then
-          echo "Error: dev/deployment.yaml not found!"
+        # Check if kustomization exists
+        if [ ! -f overlays/dev/kustomization.yaml ]; then
+          echo "Error: overlays/dev/kustomization.yaml not found!"
           exit 1
         fi
 
-        # Update Image Tag
-        sed -i "s|image: .*bankapp:.*|image: ${{ steps.login-ecr.outputs.registry }}/bankapp:$IMAGE_TAG|g" dev/deployment.yaml
+        # Update Image Tag using Kustomize (The God Level Way)
+        cd overlays/dev
+        kustomize edit set image bankapp:placeholder=${{ steps.login-ecr.outputs.registry }}/bankapp:$IMAGE_TAG
         
         # Commit and Push
         git config user.name "GitHub Actions"
         git config user.email "actions@github.com"
-        git add dev/deployment.yaml
-        git commit -m "Update Dev Image to $IMAGE_TAG" || echo "No changes to commit"
+        git add kustomization.yaml
+        git commit -m "chore(gitops): update dev image to $IMAGE_TAG" || echo "No changes to commit"
         git push
-        echo "✅ Manifest updated for Dev environment."
+        echo "✅ Manifest updated for Dev environment (Kustomize)."
 
   # 3.2 Deploy to PRE-PROD (On push to 'release/*')
   deploy-pre-prod:
@@ -387,22 +388,23 @@ jobs:
         git clone $MANIFEST_REPO manifest-repo
         cd manifest-repo
         
-        # Check if file exists
-        if [ ! -f pre-prod/deployment.yaml ]; then
-          echo "Error: pre-prod/deployment.yaml not found!"
+        # Check if kustomization exists
+        if [ ! -f overlays/pre-prod/kustomization.yaml ]; then
+          echo "Error: overlays/pre-prod/kustomization.yaml not found!"
           exit 1
         fi
 
-        # Update Image Tag
-        sed -i "s|image: .*bankapp:.*|image: ${{ steps.login-ecr.outputs.registry }}/bankapp:$IMAGE_TAG|g" pre-prod/deployment.yaml
+        # Update Image Tag using Kustomize
+        cd overlays/pre-prod
+        kustomize edit set image bankapp:placeholder=${{ steps.login-ecr.outputs.registry }}/bankapp:$IMAGE_TAG
         
         # Commit and Push
         git config user.name "GitHub Actions"
         git config user.email "actions@github.com"
-        git add pre-prod/deployment.yaml
-        git commit -m "Update Pre-Prod Image to $IMAGE_TAG" || echo "No changes to commit"
+        git add kustomization.yaml
+        git commit -m "chore(gitops): update pre-prod image to $IMAGE_TAG" || echo "No changes to commit"
         git push
-        echo "✅ Manifest updated for Pre-Prod environment."
+        echo "✅ Manifest updated for Pre-Prod environment (Kustomize)."
 
   # 3.3 Deploy to PROD (On Tag v*)
   deploy-prod:
@@ -452,19 +454,20 @@ jobs:
         git clone $MANIFEST_REPO manifest-repo
         cd manifest-repo
         
-        # Check if file exists
-        if [ ! -f prod/deployment.yaml ]; then
-          echo "Error: prod/deployment.yaml not found!"
+        # Check if kustomization exists
+        if [ ! -f overlays/prod/kustomization.yaml ]; then
+          echo "Error: overlays/prod/kustomization.yaml not found!"
           exit 1
         fi
 
-        # Update Image Tag
-        sed -i "s|image: .*bankapp:.*|image: ${{ steps.login-ecr.outputs.registry }}/bankapp:$IMAGE_TAG|g" prod/deployment.yaml
+        # Update Image Tag using Kustomize
+        cd overlays/prod
+        kustomize edit set image bankapp:placeholder=${{ steps.login-ecr.outputs.registry }}/bankapp:$IMAGE_TAG
         
         # Commit and Push
         git config user.name "GitHub Actions"
         git config user.email "actions@github.com"
-        git add prod/deployment.yaml
-        git commit -m "Update Prod Image to $IMAGE_TAG" || echo "No changes to commit"
+        git add kustomization.yaml
+        git commit -m "chore(gitops): update prod image to $IMAGE_TAG" || echo "No changes to commit"
         git push
-        echo "✅ Manifest updated for Prod environment."
+        echo "✅ Manifest updated for Prod environment (Kustomize)."

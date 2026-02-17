@@ -1,0 +1,22 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: bankapp-dev
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Hadeedahmed254/client-devsecops-menifest.git
+    targetRevision: main
+    path: overlays/dev # This tells ArgoCD: "Go to overlays/dev and run Kustomize"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: dev # Deploys into the 'dev' namespace
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true # This is the "Self-Healing" God Level feature
+    syncOptions:
+      - CreateNamespace=true

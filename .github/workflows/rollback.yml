@@ -1,0 +1,49 @@
+name: GitOps Rollback (The Panic Button) 🚨
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to rollback'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - pre-prod
+          - prod
+      reason:
+        description: 'Reason for rollback'
+        required: true
+        default: 'Manual emergency rollback'
+
+jobs:
+  rollback:
+    name: Rollback Manifest
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Execute GitOps Revert
+        env:
+          MANIFEST_REPO: "https://x-access-token:${{ secrets.MANIFEST_REPO_TOKEN }}@github.com/Hadeedahmed254/client-devsecops-menifest.git"
+          ENV: ${{ github.event.inputs.environment }}
+        run: |
+          echo "🚨 Starting Rollback for environment: $ENV"
+          git clone $MANIFEST_REPO manifest-repo
+          cd manifest-repo
+          
+          # Configure Git
+          git config user.name "GitHub Actions (Rollback)"
+          git config user.email "actions@github.com"
+          
+          # REVERT THE LAST COMMIT
+          # This reverses the image update done by the CI pipeline
+          git revert HEAD --no-edit
+          
+          # Push the fix
+          git push origin main
+          
+          echo "✅ SUCCESS: Environment $ENV has been rolled back to the previous stable version."
+          echo "🚀 ArgoCD will detected the revert and sync the cluster automatically."
