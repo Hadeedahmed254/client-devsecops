@@ -31,3 +31,15 @@ resource "aws_s3_bucket_versioning" "bucket2_versioning" {
     status = "Enabled"
   }
 }
+resource "aws_s3_bucket" "bucket3" {
+  bucket = "rds-bucket"
+
+  
+}
+
+resource "aws_s3_bucket_versioning" "bucket3_versioning" {
+  bucket = aws_s3_bucket.bucket3.id
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
