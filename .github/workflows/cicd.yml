@@ -316,6 +316,31 @@ jobs:
         docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
         echo "Pushed: $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
 
+    # 📦 DAY 21 - TASK 21.2: Generate SBOM (Software Bill of Materials)
+    # Creates a full "Ingredient List" of every library inside our Docker image
+    # This is mandatory for Bank-level compliance (PCI-DSS, SOC2)
+    - name: 📦 Generate SBOM (Software Bill of Materials)
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        ECR_REPOSITORY: bankapp
+        IMAGE_TAG: dev-${{ github.sha }}
+      run: |
+        echo "🔍 Scanning image for Software Bill of Materials..."
+        trivy image \
+          --format cyclonedx \
+          --output sbom-dev.json \
+          $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+        echo "✅ SBOM generated: sbom-dev.json"
+        echo "📦 Total components found: $(cat sbom-dev.json | python3 -c "import json,sys; d=json.load(sys.stdin); print(len(d.get('components',[])))")"
+      continue-on-error: true
+
+    - name: 📤 Upload SBOM as Compliance Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: sbom-dev-${{ github.sha }}
+        path: sbom-dev.json
+        retention-days: 90  # Keep for 90 days for compliance audits
+
     - name: Deploy to K8s (GitOps - Update Manifest Repo)
       env:
         MANIFEST_REPO: "https://x-access-token:${{ secrets.MANIFEST_REPO_TOKEN }}@github.com/Hadeedahmed254/client-devsecops-menifest.git"

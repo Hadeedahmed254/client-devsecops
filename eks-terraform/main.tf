@@ -363,6 +363,15 @@ resource "aws_eks_cluster" "eks" {
   name     = "project-eks"
   role_arn = aws_iam_role.master.arn
 
+  # 🔒 DAY 21: Enable EKS Control Plane Audit Logging
+  # These logs stream to CloudWatch automatically under:
+  # /aws/eks/project-eks/cluster
+  enabled_cluster_log_types = [
+    "api",           # Every kubectl API call (reads, writes)
+    "audit",         # Security decisions - WHO accessed WHAT secret/pod
+    "authenticator"  # Every login attempt to the cluster
+  ]
+
   vpc_config {
     # Connected to ALL subnets (Public & Private)
     subnet_ids         = [aws_subnet.public-1.id, aws_subnet.public-2.id, aws_subnet.private-1.id, aws_subnet.private-2.id]

@@ -388,3 +388,70 @@ Please send me your current
 agent.py script. 
 Ill upgrade the logic to automatically generate that detailed markdown table with the specific Fix Versions.
 It will take me about 2 to 3 hours to custom-code the JSON parsing required to extract those versions accurately from the Snyk and Trivy reports but I can get it sorted for you quickly
+
+14) CLOUDTRIAL AND k8s audit
+
+Kubernetes already has auditing capability built inside the API Server
+But in Amazon EKS it is NOT exported anywhere by default
+
+Therefore AWS gives a setting called control plane logging
+
+We enable these log types:
+api → every request hitting the API server
+audit → security sensitive actions
+authenticator → login and IAM authentication events
+
+When a user runs a kubectl command
+The request is sent to the Kubernetes API Server in Amazon EKS
+
+The API Server is the only entry point to the cluster
+No action can happen without passing through it
+
+The API Server first authenticates and authorizes the user
+Then it executes the requested action inside the cluster
+
+At the same time the API Server generates a log record of the request
+The record contains user identity, action, resource, timestamp, and source IP address
+
+Because audit log types are enabled in the EKS configuration
+The control plane exports these logs automatically
+
+The logs are streamed from the EKS control plane to Amazon CloudWatch Logs
+
+CloudWatch stores them under the cluster log group
+They become permanent and searchable security records
+
+If someone deletes a pod or accesses a secret
+Engineers can search CloudWatch and identify exactly who performed the action
+
+API logs capture every request including reads and health checks
+Audit logs capture security-sensitive actions such as create, delete, and permission changes
+
+Audit logs therefore answer the forensic question
+Who touched what and when
+
+CloudWatch acts as the storage system
+The Kubernetes API Server acts as both the gatekeeper and recorder
+
+During every CI pipeline execution
+A Docker image is built for the application
+
+After the image build finishes
+Trivy scans the image and generates a Software Bill of Materials
+
+The SBOM contains every library dependency version and license used in the container image
+
+The SBOM file is stored as a build artifact in the CI system
+Compliance teams can download it anytime
+
+If auditors ask what exists inside a production container
+The SBOM provides a verifiable inventory of all software components
+
+Audit Logs provide activity traceability
+SBOM provides software supply chain transparency
+
+Together they ensure the system is fully auditable and compliant
+
+
+
+
