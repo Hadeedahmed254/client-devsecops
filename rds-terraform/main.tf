@@ -63,23 +63,46 @@ resource "aws_security_group" "rds_sg" {
   }
 }
 
-# 4. RDS Instance (GOD LEVEL - FREE TIER EDITION)
+# 4. Generate a Random Secure Password (NEVER IN GIT)
+resource "random_password" "db_pass" {
+  length           = 16
+  special          = true
+  override_special = "!#$%&*()-_=+[]{}<>:?"
+}
+
+# 5. AWS Secrets Manager (The Vault)
+resource "aws_secretsmanager_secret" "db_password" {
+  name        = "bankapp/db/password-v2" # Changed name to avoid conflict
+  description = "RDS Password for BankApp"
+  recovery_window_in_days = 0 
+}
+
+resource "aws_secretsmanager_secret_version" "db_password_val" {
+  secret_id     = aws_secretsmanager_secret.db_password.id
+  secret_string = jsonencode({
+    username = "admin"
+    password = random_password.db_pass.result # 👈 USES THE RANDOM PASS
+    engine   = "mysql"
+    host     = aws_db_instance.bankapp_db.address
+  })
+}
+
+# 6. RDS Instance (GOD LEVEL - SECURE EDITION)
 resource "aws_db_instance" "bankapp_db" {
   allocated_storage      = 20
   db_name                = "bankapp"
   engine                 = "mysql"
   engine_version         = "8.0"
-  instance_class         = "db.t3.micro" # FREE TIER
+  instance_class         = "db.t3.micro" 
   username               = "admin"
-  password               = "BankAppPassword2024" # Should be in Secrets Manager later!
+  password               = random_password.db_pass.result # 👈 USES THE RANDOM PASS
   parameter_group_name   = "default.mysql8.0"
   db_subnet_group_name   = aws_db_subnet_group.bankapp_db_group.name
   vpc_security_group_ids = [aws_security_group.rds_sg.id]
   
-  # GOD LEVEL SETTINGS FOR FREE TIER
   publicly_accessible    = false
-  skip_final_snapshot    = true # Careful for real prod, but good for learning/destroying
-  multi_az               = false # PROTECTING YOUR WALLET 🆓
+  skip_final_snapshot    = true 
+  multi_az               = false 
   storage_type           = "gp2"
   
   tags = {
@@ -90,4 +113,8 @@ resource "aws_db_instance" "bankapp_db" {
 # Outputs for our App Config
 output "rds_endpoint" {
   value = aws_db_instance.bankapp_db.endpoint
+}
+
+output "secret_arn" {
+  value = aws_secretsmanager_secret.db_password.arn
 }

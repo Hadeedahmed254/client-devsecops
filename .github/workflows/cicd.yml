@@ -406,6 +406,23 @@ jobs:
         git push
         echo "✅ Manifest updated for Pre-Prod environment (Kustomize)."
 
+    - name: 🧪 Dynamic Smoke Test (Pre-Prod)
+      run: |
+        # 1. Wait for ArgoCD to detect the Git change and update the cluster pods
+        echo "⏳ Waiting 60s for ArgoCD eventual consistency..."
+        sleep 60
+
+        # 2. Update Kubeconfig so the runner can talk to the EKS API
+        aws eks update-kubeconfig --name ${{ vars.EKS_CLUSTER_NAME }} --region ${{ vars.AWS_REGION }}
+
+        # 3. Dynamically fetch the real Application Load Balancer (ALB) hostname from the Ingress object
+        ALB_URL=$(kubectl get ingress bankapp-ingress -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+
+        # 4. Trigger the external verification script against the live AWS endpoint
+        chmod +x scripts/smoke-test.sh
+        echo "🚀 Testing real ALB URL: $ALB_URL"
+        ./scripts/smoke-test.sh http://$ALB_URL
+
   # 3.3 Deploy to PROD (On Tag v*)
   deploy-prod:
     name: Deploy to Production
@@ -471,3 +488,20 @@ jobs:
         git commit -m "chore(gitops): update prod image to $IMAGE_TAG" || echo "No changes to commit"
         git push
         echo "✅ Manifest updated for Prod environment (Kustomize)."
+
+    - name: 🧪 Dynamic Smoke Test (Production)
+      run: |
+        # 1. Wait for ArgoCD to detect the Git change and promote the new version
+        echo "⏳ Waiting 60s for ArgoCD to sync the production state..."
+        sleep 60
+
+        # 2. Authenticate the runner with the Production EKS Cluster
+        aws eks update-kubeconfig --name ${{ vars.EKS_CLUSTER_NAME }} --region ${{ vars.AWS_REGION }}
+
+        # 3. Retrieve the dynamic Public DNS of the Production Application Load Balancer
+        ALB_URL=$(kubectl get ingress bankapp-ingress -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+
+        # 4. Execute the final business-level verification
+        chmod +x scripts/smoke-test.sh
+        echo "🚀 Testing real Production ALB URL: $ALB_URL"
+        ./scripts/smoke-test.sh http://$ALB_URL

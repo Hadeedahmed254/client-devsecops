@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Blue/Green Architecture Proposal | BankApp God Level</title>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=JetBrains+Mono:wght@400;700&display=swap"
+        rel="stylesheet">
+    <style>
+        :root {
+            --primary: #00d2ff;
+            --secondary: #3a7bd5;
+            --bg-dark: #0f172a;
+            --glass: rgba(255, 255, 255, 0.05);
+            --accent: #10b981;
+            --text-main: #f8fafc;
+            --text-dim: #94a3b8;
+        }
+
+        body {
+            background: radial-gradient(circle at top right, #1e293b, #0f172a);
+            color: var(--text-main);
+            font-family: 'Outfit', sans-serif;
+            margin: 0;
+            padding: 40px;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: var(--glass);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 24px;
+            padding: 60px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 60px;
+        }
+
+        h1 {
+            font-size: 3.5rem;
+            font-weight: 800;
+            background: linear-gradient(to right, var(--primary), var(--secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin: 0;
+            letter-spacing: -1px;
+        }
+
+        .subtitle {
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--accent);
+            text-transform: uppercase;
+            letter-spacing: 4px;
+            font-size: 0.9rem;
+            margin-top: 10px;
+        }
+
+        .content {
+            font-size: 1.15rem;
+            color: var(--text-main);
+        }
+
+        p {
+            margin-bottom: 24px;
+            position: relative;
+            padding-left: 30px;
+        }
+
+        p::before {
+            content: '⚡';
+            position: absolute;
+            left: 0;
+            top: 2px;
+            font-size: 0.9rem;
+            opacity: 0.6;
+        }
+
+        /* Grouping logic by content blocks */
+        .block {
+            margin-bottom: 30px;
+            padding: 20px;
+            border-left: 4px solid var(--secondary);
+            background: rgba(58, 123, 213, 0.05);
+            border-radius: 0 12px 12px 0;
+            transition: all 0.3s ease;
+        }
+
+        .block:hover {
+            background: rgba(58, 123, 213, 0.1);
+            transform: translateX(10px);
+        }
+
+        .highlight {
+            color: var(--primary);
+            font-weight: 600;
+        }
+
+        .success {
+            color: var(--accent);
+            font-weight: 600;
+        }
+
+        footer {
+            margin-top: 60px;
+            text-align: center;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.8rem;
+            color: var(--text-dim);
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            padding-top: 30px;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            background: var(--accent);
+            color: black;
+            font-weight: 800;
+            border-radius: 20px;
+            font-size: 0.7rem;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container">
+        <header>
+            <div class="status-badge">PRODUCTION READY</div>
+            <h1>The Safety Guarantee</h1>
+            <div class="subtitle">Blue/Green GitOps Lifecycle</div>
+        </header>
+
+        <div class="content">
+            <div class="block">
+                <p>The CD repository already contains <span class="highlight">rollout.yaml</span> defining the Argo
+                    Rollout resource</p>
+                <p>The CD repository already contains <span class="highlight">active-service.yaml</span> which
+                    represents the production service</p>
+                <p>The CD repository already contains <span class="highlight">preview-service.yaml</span> which is used
+                    for validating new versions</p>
+                <p>The CD repository already contains <span class="highlight">ingress.yaml</span> which exposes the
+                    active service externally through the load balancer</p>
+            </div>
+
+            <div class="block">
+                <p>When a developer pushes code to Git</p>
+                <p>A CI pipeline runs using GitHub Actions or Jenkins</p>
+                <p>The application is built into a Docker image</p>
+                <p>The image is tagged with a unique version such as a <span class="highlight">semantic version</span>
+                    or commit SHA</p>
+                <p>The image is pushed to Amazon ECR</p>
+            </div>
+
+            <div class="block">
+                <p>The CD repository rollout.yaml file is updated with the new image tag</p>
+                <p>The updated rollout.yaml file is committed to Git which acts as the <span class="highlight">single
+                        source of truth</span></p>
+                <p>Argo CD continuously watches the Git repository for changes</p>
+                <p>Argo CD detects the updated image tag and syncs the desired state to Kubernetes</p>
+                <p>Argo CD applies the updated Rollout resource to the cluster</p>
+            </div>
+
+            <div class="block">
+                <p>The Argo Rollouts controller detects that the Pod template inside the Rollout has changed</p>
+                <p>Kubernetes creates a new <span class="highlight">ReplicaSet</span> and generates a new <span
+                        class="highlight">rollouts-pod-template-hash</span> based on the updated Pod template</p>
+                <p>New pods are created from the new ReplicaSet and automatically receive the new
+                    rollouts-pod-template-hash label</p>
+                <p>The existing ReplicaSet continues running with its previous rollouts-pod-template-hash</p>
+            </div>
+
+            <div class="block">
+                <p>The <span class="highlight">active-service.yaml</span> initially selects pods using the old
+                    rollouts-pod-template-hash and continues serving production traffic</p>
+                <p>The <span class="highlight">preview-service.yaml</span> is automatically updated by Argo Rollouts to
+                    select pods using the new rollouts-pod-template-hash</p>
+                <p>The preview service now routes traffic only to the newly created pods for validation</p>
+            </div>
+
+            <div class="block" style="border-left-color: var(--accent);">
+                <p>The new pods must pass <span class="success">liveness probes</span> to ensure the containers are
+                    running correctly</p>
+                <p>The new pods must pass <span class="success">readiness probes</span> before being added to the
+                    preview service endpoints</p>
+                <p>If <span class="highlight">autoPromotionEnabled</span> is true Argo Rollouts waits until all new pods
+                    are healthy before promoting</p>
+                <p>If <span class="highlight">autoPromotionEnabled</span> is false manual promotion is required using
+                    the promote command</p>
+                <p>If validation fails the Rollout can be aborted and the preview service is redirected back to the
+                    stable ReplicaSet</p>
+            </div>
+
+            <div class="block" style="border-left-color: #f59e0b;">
+                <p>If validation succeeds Argo Rollouts updates the active service selector from the old
+                    rollouts-pod-template-hash to the new rollouts-pod-template-hash</p>
+                <p>Traffic <span class="highlight">instantly shifts</span> from the old ReplicaSet to the new ReplicaSet
+                    without downtime</p>
+                <p>The <span class="highlight">ingress.yaml</span> routes external traffic to the active service</p>
+                <p>The cloud load balancer forwards traffic to the Kubernetes active service</p>
+                <p>The active service forwards traffic to pods based on the rollouts-pod-template-hash selector
+                    controlled dynamically by Argo Rollouts</p>
+            </div>
+
+            <div class="block">
+                <p>After successful promotion the old ReplicaSet is scaled down but retained for rollback history</p>
+                <p>If rollback is needed the Rollout can be undone or the Git commit can be reverted</p>
+                <p>Argo CD detects the revert and syncs the cluster back to the previous desired state</p>
+                <p>Argo Rollouts then switches the active service selector back to the previous
+                    rollouts-pod-template-hash and restores traffic to the stable ReplicaSet</p>
+            </div>
+        </div>
+
+        <footer>
+            CONFIDENTIAL ARCHITECTURE PROPOSAL • PREPARED BY HADEED • 2026
+        </footer>
+    </div>
+
+</body>
+
+</html>

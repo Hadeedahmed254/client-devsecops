@@ -1,3 +1,11 @@
+1.1) ENDPOINTS
+We write health and readiness endpoints in the application.
+The app runs inside a pod using an embedded server that listens on a port.
+In Kubernetes YAML, we configure probes that call those endpoints.
+The kubelet sends HTTP requests to the pod’s IP and port.
+The controller responds with HTTP status codes.
+Kubernetes interprets the status code to decide whether the pod is alive or ready.
+
 1)Add Health Checks
 Developer writes /health and /ready endpoints → Kubernetes monitors app health
 I add .permitAll() in SecurityConfig → Kubernetes accesses without login
@@ -160,3 +168,223 @@ Helm is a Kubernetes package manager that simplifies deploying and managing appl
 A Helm Chart is a packaged collection of Kubernetes manifests and configuration values that define an application.
 
 Helm uses charts to install, upgrade, rollback, and version applications in a consistent way.
+
+9.1 diff between probes and smoke
+Kubernetes protects infrastructure stability
+Smoke testing protects business functionality
+Kubernetes answers:
+“Can I send traffic to this pod?”
+Smoke Test answers:
+“Should I send REAL USERS to this pod?”
+Example
+Let’s say:
+Your app connects to DB successfully.
+Connection = OK ✅
+But table users is missing column password_hash.
+From Kubernetes view:
+App started ✔
+DB connection works ✔
+/health returns 200 ✔
+So Kubernetes says:
+Everything is healthy.
+But from BUSINESS perspective:
+Users cannot login ❌
+
+Your CI/CD pipeline sends real API calls to Green:
+
+POST /login
+GET /account
+POST /payment
+Validate response structure
+Validate DB state
+Core business logic
+Dependencies
+Database migrations
+External integrations
+API contracts
+
+9)Blue Green deployment
+
+v1 pods are running
+Service sends traffic to v1
+v2 pods are created (no traffic yet)
+Preview service points to v2 for testing
+Main service selector switches to v2
+Users move instantly to v2 (zero downtime)
+v1 pods are deleted
+
+MORE PRECISE
+When a developer pushes code to Git
+A CI pipeline runs using GitHub Actions or Jenkins
+The application is built into a Docker image
+The image is tagged with a new version
+The image is pushed to Amazon ECR
+The CD repository is updated with the new image tag in Helm or Kustomize manifests
+The updated manifest is committed to Git which is the single source of truth
+Argo CD watches the Git repository continuously
+Argo CD detects the new image tag and syncs the desired state to Kubernetes
+Kubernetes creates a new green deployment alongside the existing blue deployment
+Blue pods have labels like app=myapp and version=blue
+Green pods have labels like app=myapp and version=green
+The main production Service selector points to version=blue
+Production traffic continues to go to blue pods
+A preview Service is created that selects version=green pods
+The preview Service allows internal testing or smoke testing of the green deployment
+Green pods must pass liveness probes
+Green pods must pass readiness probes before being considered healthy
+Smoke tests are executed using the preview Service
+If tests fail the green deployment is removed and production remains on blue
+If tests pass the promotion step begins
+The main production Service selector is changed from version=blue to version=green
+Traffic instantly shifts from blue pods to green pods without downtime
+The Application Load Balancer forwards traffic to a target group
+The target group forwards traffic to the Kubernetes production Service
+The production Service forwards traffic to pods based on matching labels
+After successful promotion the blue deployment can be scaled down or removed
+If rollback is needed the Git commit is reverted
+Argo CD detects the revert and syncs the cluster back to the previous version
+
+
+The CD repository already contains rollout.yaml defining the Argo Rollout resource
+The CD repository already contains active-service.yaml which represents the production service
+The CD repository already contains preview-service.yaml which is used for validating new versions
+The CD repository already contains ingress.yaml which exposes the active service externally through the load balancer
+When a developer pushes code to Git
+A CI pipeline runs using GitHub Actions or Jenkins
+The application is built into a Docker image
+The image is tagged with a unique version such as a semantic version or commit SHA
+The image is pushed to Amazon ECR
+The CD repository rollout.yaml file is updated with the new image tag
+The updated rollout.yaml file is committed to Git which acts as the single source of truth
+Argo CD continuously watches the Git repository for changes
+Argo CD detects the updated image tag and syncs the desired state to Kubernetes
+Argo CD applies the updated Rollout resource to the cluster
+The Argo Rollouts controller detects that the Pod template inside the Rollout has changed
+Kubernetes creates a new ReplicaSet and generates a new rollouts-pod-template-hash based on the updated Pod template
+New pods are created from the new ReplicaSet and automatically receive the new rollouts-pod-template-hash label
+The existing ReplicaSet continues running with its previous rollouts-pod-template-hash
+The active-service.yaml initially selects pods using the old rollouts-pod-template-hash and continues serving production traffic
+The preview-service.yaml is automatically updated by Argo Rollouts to select pods using the new rollouts-pod-template-hash
+The preview service now routes traffic only to the newly created pods for validation
+The new pods must pass liveness probes to ensure the containers are running correctly
+The new pods must pass readiness probes before being added to the preview service endpoints
+If autoPromotionEnabled is true Argo Rollouts waits until all new pods are healthy before promoting
+If autoPromotionEnabled is false manual promotion is required using the promote command
+If validation fails the Rollout can be aborted and the preview service is redirected back to the stable ReplicaSet
+If validation succeeds Argo Rollouts updates the active service selector from the old rollouts-pod-template-hash to the new rollouts-pod-template-hash
+Traffic instantly shifts from the old ReplicaSet to the new ReplicaSet without downtime
+The ingress.yaml routes external traffic to the active service
+The cloud load balancer forwards traffic to the Kubernetes active service
+The active service forwards traffic to pods based on the rollouts-pod-template-hash selector controlled dynamically by Argo Rollouts
+After successful promotion the old ReplicaSet is scaled down but retained for rollback history
+If rollback is needed the Rollout can be undone or the Git commit can be reverted
+Argo CD detects the revert and syncs the cluster back to the previous desired state
+Argo Rollouts then switches the active service selector back to the previous rollouts-pod-template-hash and restores traffic to the stable ReplicaSet
+
+10 CANARY DEPLOYMENT
+
+When a developer pushes code to Git
+The CI pipeline builds a new Docker image
+The image is pushed to Amazon ECR
+The Rollout manifest is updated with the new image tag and committed to Git
+Argo CD detects the change and syncs it to the Kubernetes cluster
+Argo Rollouts begins a progressive canary rollout
+The Rollout creates a new ReplicaSet for the canary pods alongside the existing stable ReplicaSet
+A stable Service selects stable pods
+A canary Service selects canary pods
+The AWS Load Balancer Controller provisions or updates an Application Load Balancer in Amazon Web Services
+Each Kubernetes Service is registered as a separate Target Group inside the ALB
+The ALB listener rule forwards traffic to both Target Groups
+Argo Rollouts dynamically updates the weight configuration of the Target Groups
+For example 90 percent of traffic is routed to the stable Target Group
+And 10 percent of traffic is routed to the canary Target Group
+The ALB distributes real user requests according to these weights
+A small percentage of production users are served by the canary pods
+Application metrics such as error rate, latency, and success rate are continuously evaluated
+If the canary version performs correctly Argo Rollouts gradually increases the weight
+Traffic shifts progressively from 90/10 to 75/25 to 50/50 to 100 percent canary
+During this process both stable and canary versions run simultaneously
+If metrics degrade Argo Rollouts immediately shifts traffic back to 100 percent stable
+This stops user traffic to the canary without deleting the canary pods
+If the rollout successfully reaches 100 percent traffic the canary ReplicaSet becomes the new stable version
+The previous stable ReplicaSet is automatically scaled down
+Throughout the process Argo CD ensures the cluster state matches what is defined in Git
+Rollback is performed by reverting the Git commit to the previous image version and allowing Argo CD to resync the cluster
+
+11) ARGO CD ROLLOUT CONTOLLER
+Argo CD watches your Git repo and makes the cluster match the YAML files. It only applies configuration — it doesn’t manage how pods update.
+If your YAML uses kind: Deployment, then Kubernetes’ own controller updates the pods using its normal rolling update.
+If your YAML uses kind: Rollout, then Argo Rollouts takes over and controls the update instead — doing canary/blue-green, traffic shifting, and rollback.
+
+
+
+12) BLUE-GREEN DEPLOYMENT USING AMAZON ECS
+
+The CD repository contains the task definition JSON file defining the ECS Task Definition.
+The CD repository contains the ECS Service configuration.
+The CD repository contains the Application Load Balancer listener and target group configuration.
+
+When a developer pushes code to Git,
+A CI pipeline runs using GitHub Actions or Jenkins.
+The application is built into a Docker image.
+The image is tagged with a unique version such as a semantic version or commit SHA.
+The image is pushed to Amazon ECR.
+
+The CD repository task definition file is updated with the new image tag.
+The updated task definition file is committed to Git which acts as the single source of truth.
+
+If using CodePipeline with CodeDeploy for ECS Blue-Green, the pipeline detects the new task definition revision.
+AWS CodeDeploy creates a new revision of the ECS Task Definition.
+
+The ECS Service uses the CodeDeploy deployment controller type.
+
+CodeDeploy creates a new replacement Task Set inside the same ECS Service.
+The existing Task Set continues running as the production version.
+
+A new Target Group is created or already exists for the green environment.
+The Application Load Balancer has two Target Groups: one for blue (current production) and one for green (new version).
+
+The new Task Set registers its tasks with the green Target Group.
+The old Task Set remains registered with the blue Target Group.
+
+The Application Load Balancer listener initially routes 100 percent of production traffic to the blue Target Group.
+
+The new tasks must pass container health checks defined in the task definition.
+The new tasks must pass target group health checks from the Application Load Balancer.
+
+Once healthy, CodeDeploy begins traffic shifting.
+
+If the deployment configuration is all-at-once,
+CodeDeploy switches the listener from the blue Target Group to the green Target Group instantly.
+
+If the deployment configuration is linear or canary,
+CodeDeploy shifts traffic gradually from blue to green according to the defined percentage and interval.
+
+During validation, monitoring and CloudWatch alarms evaluate error rate, latency, and failures.
+
+If validation fails,
+CodeDeploy shifts traffic back to the blue Target Group.
+The green Task Set is stopped.
+
+If validation succeeds,
+CodeDeploy completes the deployment.
+The green Task Set becomes the primary production Task Set.
+The blue Task Set is terminated after the configured wait time.
+
+The Application Load Balancer now routes 100 percent of traffic to the new Task Set without downtime.
+
+If rollback is needed later,
+The previous task definition revision can be redeployed.
+CodeDeploy shifts traffic back to the previous version.
+
+13) post sync
+If someone manually changes a YAML file...
+ArgoCD sees it and "Syncs" (updates the cluster).
+The Moment of Truth: As soon as the sync says "Success," ArgoCD sees that PostSync Hook.
+It automatically launches a new pod (a Job) that runs the test from the ConfigMap.
+
+okay Sravya I dont exactly know what project are you doing but  the developers definitely need the full list of CRITICAL and HIGH issues if they dont want to waste time.
+Please send me your current 
+agent.py script. 
+Ill upgrade the logic to automatically generate that detailed markdown table with the specific Fix Versions.
+It will take me about 2 to 3 hours to custom-code the JSON parsing required to extract those versions accurately from the Snyk and Trivy reports but I can get it sorted for you quickly

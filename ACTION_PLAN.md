@@ -212,7 +212,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to rollback to (e.g., 123)'
+        description: 'Version to rollback to (e.g., 123)
         required: true
 
 jobs:

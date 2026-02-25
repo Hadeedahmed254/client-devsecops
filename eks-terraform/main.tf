@@ -98,6 +98,28 @@ resource "aws_iam_role_policy_attachment" "S3ReadOnlyAccess" {
   role       = aws_iam_role.worker.name
 }
 
+# 🔒 DAY 19: Secrets Manager Access for ESO
+resource "aws_iam_policy" "secrets_manager_read" {
+  name        = "hadeed-eks-secrets-read"
+  description = "Allows EKS to read from Secrets Manager"
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [{
+      Action = [
+        "secretsmanager:GetSecretValue",
+        "secretsmanager:DescribeSecret"
+      ],
+      Effect   = "Allow",
+      Resource = "*" # In strict prod, limit to specific secret ARNs
+    }]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "secrets_manager_read" {
+  policy_arn = aws_iam_policy.secrets_manager_read.arn
+  role       = aws_iam_role.worker.name
+}
+
 resource "aws_iam_role_policy_attachment" "autoscaler" {
   policy_arn = aws_iam_policy.autoscaler.arn
   role       = aws_iam_role.worker.name
@@ -466,4 +488,112 @@ resource "helm_release" "argocd" {
 # Output the ArgoCD URL so you know where to go!
 output "argocd_loadbalancer_url" {
   value = "Wait for LB to provision, then check AWS Console or kubectl get svc -n argocd"
+}
+
+# ----------------------------
+# Argo Rollouts Installation (The Canary Engine)
+# ----------------------------
+resource "helm_release" "argo_rollouts" {
+  name       = "argo-rollouts"
+  repository = "https://argoproj.github.io/argo-helm"
+  chart      = "argo-rollouts"
+  namespace  = "argo-rollouts"
+  create_namespace = true
+  version    = "2.32.0" # Stable Version
+
+  # Enable the Dashboard for visualization
+  set {
+    name  = "dashboard.enabled"
+    value = "true"
+  }
+
+  depends_on = [aws_eks_node_group.node-grp]
+}
+
+# ----------------------------
+# External Secrets Operator (The Secret Bridge)
+# ----------------------------
+resource "helm_release" "external_secrets" {
+  name       = "external-secrets"
+  repository = "https://charts.external-secrets.io"
+  chart      = "external-secrets"
+  namespace  = "external-secrets"
+  create_namespace = true
+  version    = "0.9.11" # Stable Version
+
+  set {
+    name  = "installCRDs"
+    value = "true"
+  }
+
+  depends_on = [aws_eks_node_group.node-grp]
+}
+
+# ----------------------------
+# 🛡️ DAY 20: AWS WAF (Web Application Firewall)
+# ----------------------------
+resource "aws_wafv2_web_acl" "main" {
+  name        = "bankapp-waf"
+  description = "Protect EKS from SQLi, XSS, and common exploits"
+  scope       = "REGIONAL" # Required for ALBs in EKS
+
+  default_action {
+    allow {}
+  }
+
+  # Rule 1: AWS Managed - Common Rule Set (OWASP Top 10)
+  rule {
+    name     = "AWS-AWSManagedRulesCommonRuleSet"
+    priority = 1
+
+    override_action {
+      none {}
+    }
+
+    statement {
+      managed_rule_group_statement {
+        name        = "AWSManagedRulesCommonRuleSet"
+        vendor_name = "AWS"
+      }
+    }
+
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "bankapp-waf-common-rules"
+      sampled_requests_enabled   = true
+    }
+  }
+
+  # Rule 2: SQL Injection Protection
+  rule {
+    name     = "AWS-AWSManagedRulesSQLiRuleSet"
+    priority = 2
+
+    override_action {
+      none {}
+    }
+
+    statement {
+      managed_rule_group_statement {
+        name        = "AWSManagedRulesSQLiRuleSet"
+        vendor_name = "AWS"
+      }
+    }
+
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "bankapp-waf-sqli-rules"
+      sampled_requests_enabled   = true
+    }
+  }
+
+  visibility_config {
+    cloudwatch_metrics_enabled = true
+    metric_name                = "bankapp-waf-main"
+    sampled_requests_enabled   = true
+  }
+}
+
+output "waf_web_acl_arn" {
+  value = aws_wafv2_web_acl.main.arn
 }
