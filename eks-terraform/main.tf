@@ -357,6 +357,25 @@ resource "aws_security_group" "eks_sg" {
 }
 
 # ----------------------------
+# 📺 DAY 21: CloudWatch Log Group for EKS Audit Logs
+# ----------------------------
+# AWS automatically sends EKS logs to this exact path.
+# By defining it here in Terraform:
+# 1. We control the retention period (90 days = compliance requirement)
+# 2. We can add tags for cost tracking
+# 3. Terraform manages it - it won't be orphaned if cluster is destroyed
+resource "aws_cloudwatch_log_group" "eks_audit_logs" {
+  name              = "/aws/eks/project-eks/cluster"
+  retention_in_days = 90  # Keep logs for 90 days (PCI-DSS requirement)
+
+  tags = {
+    Name        = "eks-audit-logs"
+    Environment = "dev"
+    Purpose     = "security-compliance"
+  }
+}
+
+# ----------------------------
 # EKS Cluster (The Brain)
 # ----------------------------
 resource "aws_eks_cluster" "eks" {
@@ -364,8 +383,7 @@ resource "aws_eks_cluster" "eks" {
   role_arn = aws_iam_role.master.arn
 
   # 🔒 DAY 21: Enable EKS Control Plane Audit Logging
-  # These logs stream to CloudWatch automatically under:
-  # /aws/eks/project-eks/cluster
+  # Logs stream to CloudWatch Log Group: /aws/eks/project-eks/cluster
   enabled_cluster_log_types = [
     "api",           # Every kubectl API call (reads, writes)
     "audit",         # Security decisions - WHO accessed WHAT secret/pod
@@ -390,6 +408,7 @@ resource "aws_eks_cluster" "eks" {
     aws_iam_role_policy_attachment.AmazonEKSClusterPolicy,
     aws_iam_role_policy_attachment.AmazonEKSServicePolicy,
     aws_iam_role_policy_attachment.AmazonEKSVPCResourceController,
+    aws_cloudwatch_log_group.eks_audit_logs,  # Log group must exist first!
   ]
 }
 
