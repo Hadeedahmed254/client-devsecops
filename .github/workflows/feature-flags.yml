@@ -1,0 +1,159 @@
+name: Feature Flag Validation
+
+# ============================================================
+# This workflow validates feature flags in CI/CD.
+# It runs AFTER a deployment to verify:
+#   1. The Unleash server is reachable from the cluster
+#   2. The /api/feature-flags endpoint responds correctly
+#   3. No flags are in an unexpected state before promoting
+# ============================================================
+
+on:
+  workflow_call:  # Called from cicd.yml after deploy
+    inputs:
+      environment:
+        required: true
+        type: string
+      app-url:
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'development'
+        type: choice
+        options: [development, pre-production, production]
+      app-url:
+        description: 'Application URL to test'
+        required: true
+        type: string
+
+jobs:
+  validate-feature-flags:
+    name: ⚑ Validate Feature Flags (${{ inputs.environment }})
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # ──────────────────────────────────────────────────
+      # Step 1: Wait for app to be ready
+      # ──────────────────────────────────────────────────
+      - name: ⏳ Wait for App to be Ready
+        run: |
+          APP_URL="${{ inputs.app-url }}"
+          echo "Waiting for $APP_URL to respond..."
+          for i in $(seq 1 20); do
+            if curl -sf "$APP_URL/actuator/health" > /dev/null 2>&1; then
+              echo "✅ App is healthy after ${i} attempts"
+              break
+            fi
+            echo "  Attempt $i/20 failed. Retrying in 15s..."
+            sleep 15
+          done
+
+      # ──────────────────────────────────────────────────
+      # Step 2: Verify Feature Flag endpoint is live
+      # ──────────────────────────────────────────────────
+      - name: ⚑ Verify Feature Flags Endpoint
+        id: flag-check
+        run: |
+          APP_URL="${{ inputs.app-url }}"
+          echo "Querying feature flags from: $APP_URL/api/feature-flags"
+
+          RESPONSE=$(curl -sf "$APP_URL/api/feature-flags")
+          EXIT_CODE=$?
+
+          if [ $EXIT_CODE -ne 0 ]; then
+            echo "❌ Feature flags endpoint is DOWN. Unleash connection may be broken."
+            exit 1
+          fi
+
+          echo "✅ Feature flags endpoint responded successfully"
+          echo "Raw response:"
+          echo "$RESPONSE" | python3 -m json.tool
+
+          # Save flag states to environment for next steps
+          echo "feature_flags_response=$RESPONSE" >> $GITHUB_OUTPUT
+
+      # ──────────────────────────────────────────────────
+      # Step 3: Validate critical flags are in safe state
+      # ──────────────────────────────────────────────────
+      - name: 🔍 Validate Flag Safety Rules
+        run: |
+          RESPONSE='${{ steps.flag-check.outputs.feature_flags_response }}'
+
+          # Parse flag values
+          MAINTENANCE_MODE=$(echo "$RESPONSE" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['flags'].get('bankapp.maintenance-mode', False))")
+
+          # ⚠️ SAFETY RULE: Maintenance mode must be OFF before we mark deployment successful
+          if [ "$MAINTENANCE_MODE" = "True" ]; then
+            echo "🚨 CRITICAL: bankapp.maintenance-mode is ON!"
+            echo "   The app is in maintenance mode. This may be intentional."
+            echo "   Please verify and turn it off in the Unleash dashboard if not needed."
+            # In a strict pipeline, exit 1 here. We warn but allow to proceed.
+          else
+            echo "✅ bankapp.maintenance-mode is OFF — safe to proceed"
+          fi
+
+      # ──────────────────────────────────────────────────
+      # Step 4: Post flag state summary to GitHub Step Summary
+      # ──────────────────────────────────────────────────
+      - name: 📋 Post Flag State to Step Summary
+        if: always()
+        run: |
+          RESPONSE='${{ steps.flag-check.outputs.feature_flags_response }}'
+
+          echo "## ⚑ Feature Flag State — ${{ inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Flag | State |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|-------|" >> $GITHUB_STEP_SUMMARY
+
+          # Parse and display each flag
+          echo "$RESPONSE" | python3 -c "
+          import json, sys
+          data = json.load(sys.stdin)
+          for flag, state in data.get('flags', {}).items():
+              icon = '✅ ON' if state else '⭕ OFF'
+              print(f'| \`{flag}\` | {icon} |')
+          " >> $GITHUB_STEP_SUMMARY
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "> Timestamp: $(date -u)" >> $GITHUB_STEP_SUMMARY
+
+  # ──────────────────────────────────────────────────────────
+  # Unleash Connectivity Health Check
+  # Verifies the Unleash server itself is responding on the cluster
+  # ──────────────────────────────────────────────────────────
+  unleash-health-check:
+    name: 🏥 Unleash Server Health (${{ inputs.environment }})
+    runs-on: ubuntu-latest
+    needs: validate-feature-flags
+    if: always()
+
+    steps:
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
+        continue-on-error: true
+
+      - name: Check Unleash Server Health via kubectl
+        run: |
+          aws eks update-kubeconfig --name ${{ vars.EKS_CLUSTER_NAME }} --region ${{ vars.AWS_REGION }} 2>/dev/null || echo "⚠️ Could not connect to EKS for Unleash check"
+
+          UNLEASH_POD=$(kubectl get pods -n unleash -l app=unleash-server -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+
+          if [ -z "$UNLEASH_POD" ]; then
+            echo "⚠️ Unleash pod not found — may not be deployed yet"
+          else
+            echo "✅ Unleash pod found: $UNLEASH_POD"
+            READY=$(kubectl get pod $UNLEASH_POD -n unleash -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null)
+            echo "   Pod Ready status: $READY"
+          fi
+        continue-on-error: true

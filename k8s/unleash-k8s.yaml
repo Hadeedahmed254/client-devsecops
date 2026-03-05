@@ -1,0 +1,212 @@
+---
+# ============================================================
+# Unleash Feature Flag Server — Kubernetes Deployment
+# Runs on your EKS cluster (managed by ArgoCD)
+# ============================================================
+# Unleash is the open-source LaunchDarkly alternative.
+# This deploys the Unleash server + its PostgreSQL database.
+#
+# Access the UI at: http://<UNLEASH-LB-URL>
+# Default credentials: admin / unleash4all
+#
+# After deploying:
+# 1. Log in and create the flags defined in FeatureFlagService.java:
+#    - bankapp.new-dashboard
+#    - bankapp.instant-transfer
+#    - bankapp.maintenance-mode
+#    - bankapp.enhanced-security
+# 2. Create an API token and store it in AWS Secrets Manager:
+#    Secret Name: /bankapp/unleash-api-key
+# ============================================================
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: unleash
+  labels:
+    app.kubernetes.io/managed-by: argocd
+
+---
+# ============================================================
+# PostgreSQL Database for Unleash
+# ============================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: unleash-postgres
+  namespace: unleash
+  labels:
+    app: unleash-postgres
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: unleash-postgres
+  template:
+    metadata:
+      labels:
+        app: unleash-postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:15-alpine
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: "unleash"
+            - name: POSTGRES_USER
+              value: "unleash_user"
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: unleash-secrets
+                  key: postgres-password
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+      volumes:
+        - name: postgres-data
+          emptyDir: {}  # ⚠️ For prod: replace with a PersistentVolumeClaim
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: unleash-postgres
+  namespace: unleash
+spec:
+  selector:
+    app: unleash-postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
+
+---
+# ============================================================
+# Secrets (In REAL prod, this is managed by External Secrets Operator
+# pulling from AWS Secrets Manager — matching your Day 19 setup)
+# ============================================================
+apiVersion: v1
+kind: Secret
+metadata:
+  name: unleash-secrets
+  namespace: unleash
+type: Opaque
+stringData:
+  postgres-password: "CHANGE_ME_USE_SECRETS_MANAGER"
+  admin-auth-token: "CHANGE_ME_USE_SECRETS_MANAGER"
+
+---
+# ============================================================
+# Unleash Server
+# ============================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: unleash-server
+  namespace: unleash
+  labels:
+    app: unleash-server
+    version: "6.0"
+  annotations:
+    # Tells ArgoCD this is a tracked resource
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  replicas: 2  # HA: 2 replicas for zero-downtime updates
+  selector:
+    matchLabels:
+      app: unleash-server
+  template:
+    metadata:
+      labels:
+        app: unleash-server
+    spec:
+      # Wait for Postgres to be ready before starting
+      initContainers:
+        - name: wait-for-postgres
+          image: busybox
+          command: ['sh', '-c', 'until nc -z unleash-postgres 5432; do echo waiting for postgres...; sleep 2; done']
+      containers:
+        - name: unleash
+          image: unleashorg/unleash-server:6
+          ports:
+            - containerPort: 4242
+          env:
+            - name: DATABASE_URL
+              value: "postgres://unleash_user:$(POSTGRES_PASSWORD)@unleash-postgres:5432/unleash"
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: unleash-secrets
+                  key: postgres-password
+            - name: LOG_LEVEL
+              value: "warn"
+            # The API token that your BankApp uses to read flags
+            - name: INIT_CLIENT_API_TOKENS
+              valueFrom:
+                secretKeyRef:
+                  name: unleash-secrets
+                  key: admin-auth-token
+            # Pre-seed flags so they exist on first boot
+            - name: INIT_FRONTEND_API_TOKENS
+              value: "default:development.unleash-insecure-api-token"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 4242
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 4242
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+
+---
+# Internal service (used by BankApp pods to talk to Unleash)
+apiVersion: v1
+kind: Service
+metadata:
+  name: unleash-service
+  namespace: unleash
+spec:
+  selector:
+    app: unleash-server
+  ports:
+    - name: http
+      port: 4242
+      targetPort: 4242
+
+---
+# External LoadBalancer (for the admin UI access)
+apiVersion: v1
+kind: Service
+metadata:
+  name: unleash-ui
+  namespace: unleash
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+spec:
+  type: LoadBalancer
+  selector:
+    app: unleash-server
+  ports:
+    - name: http
+      port: 80
+      targetPort: 4242

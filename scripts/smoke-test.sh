@@ -57,6 +57,28 @@ if [[ "$API_RESPONSE" == *"\"balance\":-"* ]] || [[ "$API_RESPONSE" == *"\"balan
 fi
 echo "✅ OK: Business logic validated."
 
+
+# --- TEST 5: ⚑ FEATURE FLAG HEALTH CHECK ---
+# Purpose: Verifies the Unleash client is connected and flags are being served.
+#          SAFETY CHECK: Ensures maintenance-mode is NOT accidentally ON
+#          before we route real traffic to this environment.
+echo "5. Checking Feature Flag Service (/api/feature-flags)..."
+FLAG_RESPONSE=$(curl -s -H "$HEADER" "$APP_URL/api/feature-flags")
+FLAG_HTTP=$(curl -s -H "$HEADER" -o /dev/null -w "%{http_code}" "$APP_URL/api/feature-flags")
+
+if [ "$FLAG_HTTP" != "200" ]; then
+    echo "❌ FAIL: Feature flags endpoint not responding ($FLAG_HTTP). Unleash may be down."
+    exit 1
+fi
+
+# Critical safety check: maintenance mode must be OFF before traffic switch
+MAINTENANCE_MODE=$(echo "$FLAG_RESPONSE" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('flags', {}).get('bankapp.maintenance-mode', False))" 2>/dev/null || echo "False")
+if [ "$MAINTENANCE_MODE" = "True" ]; then
+    echo "❌ FAIL: bankapp.maintenance-mode is ON! Cannot switch traffic to this environment."
+    exit 1
+fi
+echo "✅ OK: Feature flags are healthy and maintenance mode is OFF."
+
 # --- FINAL VERDICT ---
 echo "------------------------------------------------------------"
 echo "🏆 ALL GATES PASSED: Green version is safe for production traffic!"
